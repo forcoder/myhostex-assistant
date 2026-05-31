@@ -359,12 +359,20 @@ async function testCloudConnection(endpoint, apiKey) {
 async function handleSyncNow() {
   console.log("[Popup-Sync] 执行立即同步");
 
-  if (!syncConfig.enabled || !syncConfig.cloudEndpoint) {
-    return { success: false, message: "请先配置云端同步" };
+  // 检查登录状态
+  if (!syncAuthManager.isLoggedIn()) {
+    const msgEl = document.getElementById("sync-msg");
+    if (msgEl) {
+      msgEl.textContent = "请先登录后再同步";
+      msgEl.style.color = "#f59e0b";
+    }
+    document.getElementById("login-modal")?.classList.add("open");
+    return { success: false, message: "请先登录" };
   }
 
   const msgEl = document.getElementById("sync-msg");
-  const badge = document.getElementById("sync-status-badge");
+  const detailEl = document.getElementById("sync-detail");
+  const detailContentEl = document.getElementById("sync-detail-content");
 
   try {
     // 更新 UI 状态
@@ -372,16 +380,14 @@ async function handleSyncNow() {
       msgEl.textContent = "正在同步...";
       msgEl.style.color = "#6b7280";
     }
-    if (badge) {
-      badge.textContent = "同步中";
-      badge.className = "sync-badge pending";
-    }
 
     // 导出数据
-    const jsonData = await syncService.exportData();
+    const exportResult = await syncService.exportData();
+    const jsonData = exportResult.json;
+    const localStats = exportResult.stats;
 
-    // 上传到云端
-    const uploadResult = await uploadToCloud(jsonData);
+    // 上传到云端（带认证）
+    const uploadResult = await uploadToCloudWithAuth(jsonData, localStats);
     if (!uploadResult.success) {
       throw new Error(uploadResult.message);
     }
@@ -395,8 +401,14 @@ async function handleSyncNow() {
     // 刷新状态
     await checkSyncStatus();
 
+    // 显示详细统计（只显示有变更的类型）
+    if (uploadResult.stats) {
+      detailContentEl.innerHTML = formatSyncDetail(uploadResult.stats);
+      detailEl.style.display = "block";
+    }
+
     if (msgEl) {
-      msgEl.textContent = "同步成功";
+      msgEl.textContent = "✓ 同步完成";
       msgEl.style.color = "#059669";
       setTimeout(() => {
         msgEl.textContent = "";
@@ -404,7 +416,7 @@ async function handleSyncNow() {
     }
 
     console.log("[Popup-Sync] 同步完成");
-    return { success: true, message: "同步成功" };
+    return { success: true, message: "同步成功", stats: uploadResult.stats };
   } catch (err) {
     console.error("[Popup-Sync] 同步失败:", err);
 
@@ -414,8 +426,93 @@ async function handleSyncNow() {
     }
 
     showSyncError();
+    if (detailEl) detailEl.style.display = "none";
 
     return { success: false, message: err.message };
+  }
+}
+
+/**
+ * 格式化同步详情显示（只显示有变更的类型）
+ */
+function formatSyncDetail(stats) {
+  const lines = [];
+  const now = new Date();
+  lines.push(`<div style="margin-bottom:8px;color:#059669;font-weight:600">✓ 同步完成（${now.toLocaleString("zh-CN")}）</div>`);
+
+  // 推送变更 - 只显示有数据的类型
+  const pushItems = [];
+  if (stats.push) {
+    if (stats.push.replyRules > 0) pushItems.push(`知识库 ${stats.push.replyRules} 条`);
+    if (stats.push.aiConfigs > 0) pushItems.push(`AI模型 ${stats.push.aiConfigs} 条`);
+    if (stats.push.rooms > 0) pushItems.push(`房源 ${stats.push.rooms} 条`);
+    if (stats.push.userStyle > 0) pushItems.push(`风格画像 ${stats.push.userStyle} 条`);
+    if (stats.push.propInfo > 0) pushItems.push(`房源配置 ${stats.push.propInfo} 条`);
+    if (stats.push.mhaConfig > 0) pushItems.push(`助手配置 ${stats.push.mhaConfig} 条`);
+    if (stats.push.settings > 0) pushItems.push(`设置 ${stats.push.settings} 条`);
+  }
+  if (pushItems.length > 0) {
+    lines.push(`<div style="margin-top:4px"><span style="color:#7c3aed">📤 推送:</span> ${pushItems.join("，")}</div>`);
+  }
+
+  // 拉取变更 - 只显示有数据的类型
+  const pullItems = [];
+  if (stats.pull) {
+    if (stats.pull.replyRules > 0) pullItems.push(`知识库 ${stats.pull.replyRules} 条`);
+    if (stats.pull.aiConfigs > 0) pullItems.push(`AI模型 ${stats.pull.aiConfigs} 条`);
+    if (stats.pull.rooms > 0) pullItems.push(`房源 ${stats.pull.rooms} 条`);
+    if (stats.pull.userStyle > 0) pullItems.push(`风格画像 ${stats.pull.userStyle} 条`);
+    if (stats.pull.propInfo > 0) pullItems.push(`房源配置 ${stats.pull.propInfo} 条`);
+    if (stats.pull.mhaConfig > 0) pullItems.push(`助手配置 ${stats.pull.mhaConfig} 条`);
+    if (stats.pull.settings > 0) pullItems.push(`设置 ${stats.pull.settings} 条`);
+  }
+  if (pullItems.length > 0) {
+    lines.push(`<div style="margin-top:4px"><span style="color:#2563eb">📥 拉取:</span> ${pullItems.join("，")}</div>`);
+  }
+
+  return lines.join("");
+}
+
+/**
+ * 带认证上传到云端
+ */
+async function uploadToCloudWithAuth(jsonData, localStats) {
+  const { cloudEndpoint } = syncConfig;
+  const token = syncAuthManager.getAccessToken();
+
+  if (!cloudEndpoint || !token) {
+    return { success: false, message: "未登录或未配置云端" };
+  }
+
+  try {
+    const url = `${cloudEndpoint.replace(/\/$/, "")}/sync/upload`;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        data: jsonData,
+        timestamp: new Date().toISOString(),
+        deviceId: await getDeviceId(),
+        localStats: localStats
+      }),
+    });
+
+    if (resp.ok) {
+      const result = await resp.json();
+      return { success: true, message: "上传成功", stats: result.stats || {} };
+    } else {
+      const err = await resp.json().catch(() => ({}));
+      if (resp.status === 401) {
+        await syncAuthManager.clearAuthState();
+        return { success: false, message: "登录已过期，请重新登录" };
+      }
+      return { success: false, message: err.message || `上传失败: ${resp.status}` };
+    }
+  } catch (err) {
+    return { success: false, message: `网络错误: ${err.message}` };
   }
 }
 
@@ -511,7 +608,8 @@ async function handleExportData() {
       msgEl.style.color = "#6b7280";
     }
 
-    const jsonData = await syncService.exportData();
+    const exportResult = await syncService.exportData();
+    const jsonData = exportResult.json;
 
     // 创建下载
     const blob = new Blob([jsonData], { type: "application/json" });
