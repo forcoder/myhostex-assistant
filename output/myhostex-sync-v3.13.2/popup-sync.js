@@ -14,6 +14,114 @@ const SYNC_STATUS = {
 
 const SYNC_CONFIG_KEY = "sync_config";
 
+// ── 认证状态存储键 ───────────────────────────
+const SYNC_AUTH_KEY = "sync_auth";
+
+// ── SyncAuthManager ─────────────────────────
+class SyncAuthManager {
+  constructor() {
+    this._auth = null;
+    this._listeners = [];
+  }
+
+  getAuth() { return this._auth; }
+
+  isLoggedIn() { return this._auth !== null && this._auth.expiresAt > Date.now(); }
+
+  getAccessToken() { return this._auth?.accessToken || null; }
+
+  getTenantId() { return this._auth?.tenantId || null; }
+
+  async loadAuthState() {
+    try {
+      const result = await chrome.storage.local.get(SYNC_AUTH_KEY);
+      if (result[SYNC_AUTH_KEY]) {
+        this._auth = result[SYNC_AUTH_KEY];
+        if (this._auth.expiresAt <= Date.now()) { this._auth = null; }
+      }
+      return this._auth;
+    } catch (err) {
+      console.error("[SyncAuth] 加载认证状态失败:", err);
+      return null;
+    }
+  }
+
+  async saveAuthState(auth) {
+    this._auth = auth;
+    await chrome.storage.local.set({ [SYNC_AUTH_KEY]: auth });
+    this._notifyListeners();
+  }
+
+  async clearAuthState() {
+    this._auth = null;
+    await chrome.storage.local.remove(SYNC_AUTH_KEY);
+    this._notifyListeners();
+  }
+
+  addListener(callback) { this._listeners.push(callback); }
+  removeListener(callback) { this._listeners = this._listeners.filter(l => l !== callback); }
+  _notifyListeners() { this._listeners.forEach(cb => cb(this._auth)); }
+
+  async login(email, password) {
+    const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
+    try {
+      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      const result = await resp.json();
+      if (result.isSuccess && result.data) {
+        const auth = {
+          userId: result.data.userId,
+          tenantId: result.data.tenantId || result.data.userId,
+          accessToken: result.data.accessToken,
+          refreshToken: result.data.refreshToken,
+          expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
+        };
+        await this.saveAuthState(auth);
+        return { success: true, message: "登录成功" };
+      }
+      return { success: false, message: result.message || "登录失败" };
+    } catch (err) {
+      return { success: false, message: `网络错误: ${err.message}` };
+    }
+  }
+
+  async register(email, password, displayName) {
+    const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
+    try {
+      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password, displayName })
+      });
+      const result = await resp.json();
+      if (result.isSuccess && result.data) {
+        const auth = {
+          userId: result.data.userId,
+          tenantId: result.data.tenantId || result.data.userId,
+          accessToken: result.data.accessToken,
+          refreshToken: result.data.refreshToken,
+          expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
+        };
+        await this.saveAuthState(auth);
+        return { success: true, message: "注册成功" };
+      }
+      return { success: false, message: result.message || "注册失败" };
+    } catch (err) {
+      return { success: false, message: `网络错误: ${err.message}` };
+    }
+  }
+
+  async logout() {
+    await this.clearAuthState();
+    return { success: true, message: "已登出" };
+  }
+}
+
+const syncAuthManager = new SyncAuthManager();
+
 // ── 全局状态 ──────────────────────────────────
 let syncConfig = {
   enabled: false,
@@ -480,7 +588,7 @@ async function handleImportData() {
 
       // 询问合并策略
       const merge = confirm(
-        "导入模式选择:\n\n确定: 合并模式（保留已有数据，新增数据合并）\n取消: 覆盖模式（完全替换为导入数据）\n\n建议首次导入选择"确定"，后续同步选择"取消"覆盖。"
+        "导入模式选择:\n\n确定: 合并模式（保留已有数据，新增数据合并）\n取消: 覆盖模式（完全替换为导入数据）\n\n建议首次导入选择确定，后续同步选择取消覆盖。"
       );
 
       if (msgEl) {
@@ -574,5 +682,6 @@ if (typeof window !== "undefined") {
     loadSyncSettings,
     saveSyncSettings,
     SYNC_STATUS,
+    authManager: syncAuthManager,
   };
 }
