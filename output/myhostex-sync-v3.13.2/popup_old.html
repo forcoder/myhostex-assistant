@@ -435,25 +435,6 @@
       color: #9ca3af; font-size: 10px;
     }
 
-    .kb-item-actions {
-      display: flex;
-      gap: 4px;
-      margin-top: 6px;
-      justify-content: flex-end;
-    }
-    .kb-btn-toggle,
-    .kb-btn-delete {
-      background: none;
-      border: 1px solid #d1d5db;
-      border-radius: 4px;
-      padding: 3px 8px;
-      font-size: 11px;
-      cursor: pointer;
-      transition: all 0.15s;
-    }
-    .kb-btn-toggle:hover { background: #ede9fe; border-color: #c4b5fd; }
-    .kb-btn-delete:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
-
     .kb-pagination {
       display: flex; justify-content: center; gap: 4px;
       font-size: 11px; margin-top: 2px;
@@ -480,111 +461,13 @@
       font-size: 13px; transition: opacity 0.15s;
     }
     .open-link:hover { opacity: 0.9; }
-
-    /* ── AI Config Card ── */
-    .ai-config-card {
-      background: #f9fafb;
-      border: 1px solid #e5e7eb;
-      border-radius: 8px;
-      padding: 10px;
-      margin-bottom: 8px;
-    }
-    .ai-config-card.default {
-      border-color: #4f46e5;
-      background: #eef2ff;
-    }
-    .ai-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
-    .ai-card-name {
-      font-size: 12px;
-      font-weight: 700;
-      color: #1e1b4b;
-    }
-    .ai-card-default-badge {
-      font-size: 10px;
-      background: #4f46e5;
-      color: #fff;
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: 6px;
-    }
-    .ai-card-actions {
-      display: flex;
-      gap: 4px;
-    }
-    .ai-card-info {
-      font-size: 11px;
-      color: #6b7280;
-      line-height: 1.6;
-    }
-    .ai-card-model {
-      color: #4b5563;
-    }
-
-    /* ── 同步设置 ── */
-    .sync-card {
-      background: #fff;
-      border-radius: 10px;
-      padding: 13px;
-      margin-bottom: 10px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-    }
-    .sync-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-    .sync-title {
-      font-size: 11px;
-      color: #7c3aed;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-    .sync-badge {
-      font-size: 10px;
-      padding: 2px 8px;
-      border-radius: 10px;
-      font-weight: 600;
-    }
-    .sync-badge.synced { background: #d1fae5; color: #065f46; }
-    .sync-badge.pending { background: #fef3c7; color: #92400e; }
-    .sync-badge.error { background: #fee2e2; color: #991b1b; }
-
-    .sync-status-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 12px;
-      color: #6b7280;
-      margin-bottom: 10px;
-      padding: 8px 10px;
-      background: #f9fafb;
-      border-radius: 6px;
-    }
-    .sync-status-row .icon { font-size: 14px; }
-    .sync-status-row .label { color: #374151; font-weight: 600; }
-    .sync-status-row .value { color: #6b7280; }
-
-    .sync-actions {
-      display: flex;
-      gap: 8px;
-    }
-    .sync-actions .btn { flex: 1; text-align: center; }
-    .sync-btn-export { background: linear-gradient(135deg,#10b981,#059669); color:#fff; }
-    .sync-btn-import { background: #ede9fe; color: #5b21b6; }
   </style>
 </head>
 <body>
 
 <div class="popup-header">
   <h1>🏠 智能回复助手</h1>
-  <div class="subtitle">MyHostex · AI 驱动 · 多模型自动降级 · 云端同步 · v3.13.2</div>
+  <div class="subtitle">MyHostex · AI 驱动 · 了解你的房间 · 学习你的风格</div>
 </div>
 
 <!-- Tab Bar -->
@@ -593,27 +476,48 @@
   <button class="tab-btn" data-tab="tab-rooms">🏠 房间信息</button>
   <button class="tab-btn" data-tab="tab-rules">📋 回复规则</button>
   <button class="tab-btn" data-tab="tab-style">📊 风格</button>
-  <button class="tab-btn" data-tab="tab-sync">☁️ 同步</button>
 </div>
 
 <!-- ══════════ TAB: AI 配置 ══════════ -->
 <div class="tab-panel active" id="tab-ai">
 
-  <!-- 多模型列表 -->
   <div class="section">
-    <div class="section-title">🔌 大模型配置（支持多个，优先使用默认）</div>
-    <div id="ai-configs-list"></div>
-    <div style="display:flex; gap:8px; margin-top:10px">
-      <button class="btn btn-secondary" id="btn-import-qwen" style="flex:1">
-        📥 导入通义千问免费模型
-      </button>
-      <button class="btn btn-secondary" id="btn-add-ai-config" style="flex:1">
-        ➕ 添加模型配置
-      </button>
+    <div class="section-title">🔌 大模型接入</div>
+
+    <div class="form-group">
+      <label>模型提供商</label>
+      <select id="ai-provider">
+        <option value="openai">OpenAI (GPT-4o / GPT-4)</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="qwen">通义千问 (Qwen)</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="custom">自定义 API（兼容 OpenAI 格式）</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="group-base-url" style="display:none">
+      <label>API Base URL</label>
+      <input type="url" id="ai-base-url" placeholder="https://api.example.com/v1" />
+    </div>
+
+    <div class="form-group">
+      <label>API Key</label>
+      <div class="input-row">
+        <input type="password" id="ai-api-key" placeholder="sk-..." autocomplete="off" />
+        <button class="btn-test" id="btn-test-api">测试连接</button>
+      </div>
+      <div class="api-status">
+        <div class="status-dot" id="api-dot"></div>
+        <span id="api-status-text">未配置</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>模型名称 <span class="label-hint">（留空使用默认）</span></label>
+      <input type="text" id="ai-model" placeholder="gpt-4o" />
     </div>
   </div>
 
-  <!-- 生成参数 -->
   <div class="section">
     <div class="section-title">⚙️ 生成参数</div>
     <div class="form-group">
@@ -635,8 +539,12 @@
     </div>
   </div>
 
+  <div class="btn-row" style="padding: 0 0 10px">
+    <button class="btn btn-primary btn-full" id="btn-save-ai">保存 AI 配置</button>
+  </div>
   <div id="status-msg"></div>
 </div>
+
 <!-- ══════════ TAB: 房间信息 ══════════ -->
 <div class="tab-panel" id="tab-rooms">
 
@@ -718,26 +626,8 @@
   <div class="section">
     <div class="section-title">📚 回复知识库</div>
     <p style="font-size:12px;color:#6b7280;margin-bottom:10px;line-height:1.6">
-      导入从 myhostex 导出的自动化规则文件（JSON 格式），AI 回复时自动按关键词匹配最相关的条目。<br>
-      也可以手动添加关键词回复规则。
+      导入从 myhostex 导出的自动化规则文件（JSON 格式），AI 回复时自动按关键词匹配最相关的条目。
     </p>
-
-    <!-- 手动添加规则表单 -->
-    <div style="background:#f9fafb;padding:10px;border-radius:6px;margin-bottom:12px;border:1px solid #e5e7eb">
-      <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">➕ 手动添加规则</div>
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <input type="text" id="kb-manual-keyword" placeholder="关键词（如：价格、入住时间）" style="font-size:12px;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px" />
-        <textarea id="kb-manual-reply" placeholder="回复内容（如：一天200元，您要住几天？）" rows="2" style="font-size:12px;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px;resize:vertical"></textarea>
-        <input type="text" id="kb-manual-properties" placeholder="适用房源（留空=全部，多个房源用逗号分隔，如：5街35号,波韵5街6号）" style="font-size:12px;padding:6px 8px;border:1px solid #d1d5db;border-radius:4px" />
-        <div style="display:flex;align-items:center;justify-content:space-between">
-          <label style="font-size:11px;color:#6b7280;margin:0;display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="kb-manual-enabled" checked style="margin:0" />
-            立即启用此规则
-          </label>
-          <button class="btn-test" id="btn-add-manual-kb" style="padding:5px 12px;font-size:11px">添加到知识库</button>
-        </div>
-      </div>
-    </div>
 
     <!-- 导入区 -->
     <div id="kb-empty-state">
@@ -933,100 +823,6 @@
   📬 打开 MyHostex 收件箱
 </a>
 
-<!-- 模型配置编辑/添加 Modal -->
-<div class="modal-overlay" id="ai-config-modal">
-  <div class="modal" style="width:360px">
-    <h3 id="ai-modal-title">添加模型配置</h3>
-    <div class="form-group">
-      <label>配置名称 <span class="label-hint">（用于识别，如：GPT-4 主模型）</span></label>
-      <input type="text" id="ai-config-name" placeholder="GPT-4" maxlength="30" />
-    </div>
-
-    <div class="form-group">
-      <label>模型提供商</label>
-      <select id="ai-provider">
-        <option value="openai">OpenAI (GPT-4o / GPT-4)</option>
-        <option value="deepseek">DeepSeek</option>
-        <option value="qwen">通义千问 (Qwen)</option>
-        <option value="zhipu">智谱 GLM</option>
-        <option value="custom">自定义 API（兼容 OpenAI 格式）</option>
-      </select>
-    </div>
-
-    <div class="form-group" id="group-base-url" style="display:none">
-      <label>API Base URL</label>
-      <input type="url" id="ai-base-url" placeholder="https://api.example.com/v1" />
-    </div>
-
-    <div class="form-group">
-      <label>API Key</label>
-      <div class="input-row">
-        <input type="password" id="ai-api-key" placeholder="sk-..." autocomplete="off" />
-        <button class="btn-test" id="btn-test-api-in-modal">测试连接</button>
-      </div>
-      <div class="api-status">
-        <div class="status-dot" id="api-dot-modal"></div>
-        <span id="api-status-text-modal">未配置</span>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label>模型名称 <span class="label-hint">（留空使用默认）</span></label>
-      <input type="text" id="ai-model" placeholder="gpt-4o" />
-    </div>
-
-    <div class="form-group">
-      <label>
-        <input type="checkbox" id="ai-config-default" /> 设为默认模型
-      </label>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn btn-secondary" data-close="ai-config-modal">取消</button>
-      <button class="btn btn-primary" id="btn-save-ai-config">保存</button>
-    </div>
-  </div>
-</div>
-<!-- ══════════ TAB: 同步 ☁️ ══════════ -->
-<div class="tab-panel" id="tab-sync">
-  <div class="section">
-    <div class="sync-header">
-      <div class="sync-title">☁️ 数据同步</div>
-      <span class="sync-badge pending" id="sync-status-badge">未同步</span>
-    </div>
-
-    <div class="sync-status-row">
-      <span class="icon">📅</span>
-      <span class="label">上次同步:</span>
-      <span class="value" id="sync-last-time">从未同步</span>
-    </div>
-
-    <div class="sync-status-row">
-      <span class="icon">📦</span>
-      <span class="label">已保存数据:</span>
-      <span class="value" id="sync-data-count">加载中...</span>
-    </div>
-
-    <div class="sync-actions">
-      <button class="btn sync-btn-export" id="btn-sync-export">📤 导出数据</button>
-      <button class="btn sync-btn-import" id="btn-sync-import">📥 导入数据</button>
-    </div>
-
-    <div id="sync-msg" style="font-size:12px;text-align:center;margin-top:8px;min-height:16px"></div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">💡 同步说明</div>
-    <div style="font-size:12px;color:#6b7280;line-height:1.6">
-      <p style="margin-bottom:8px">• <strong>导出数据</strong>：将所有配置、规则、房间信息打包为 JSON 文件下载</p>
-      <p style="margin-bottom:8px">• <strong>导入数据</strong>：从备份文件恢复数据，支持合并模式避免覆盖</p>
-      <p>• 建议定期导出备份，防止数据丢失</p>
-    </div>
-  </div>
-</div>
-
-<script src="sync-service.js"></script>
-<script src="popup-sync.js"></script>
 <script src="popup.js"></script>
 </body>
 </html>
