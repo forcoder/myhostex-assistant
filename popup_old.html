@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyHostex 智能回复助手</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 400px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-size: 13px;
+      color: #1e1b4b;
+      background: #f5f3ff;
+    }
+
+    /* ── Header ── */
+    .popup-header {
+      background: linear-gradient(135deg, #4f46e5, #7c3aed);
+      color: #fff;
+      padding: 14px 16px 12px;
+    }
+    .popup-header h1 {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .popup-header .subtitle {
+      font-size: 11px;
+      opacity: 0.8;
+      margin-top: 3px;
+    }
+
+    /* ── Tab Bar ── */
+    .tab-bar {
+      display: flex;
+      background: #fff;
+      border-bottom: 2px solid #ede9fe;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 9px 0;
+      font-size: 12px;
+      font-weight: 600;
+      color: #6b7280;
+      border: none;
+      background: none;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.15s;
+    }
+    .tab-btn.active {
+      color: #4f46e5;
+      border-bottom-color: #4f46e5;
+    }
+    .tab-btn:hover:not(.active) { background: #f9f7ff; }
+
+    /* ── Tab Content ── */
+    .tab-panel { display: none; padding: 10px; }
+    .tab-panel.active { display: block; }
+
+    /* ── Section ── */
+    .section {
+      background: #fff;
+      border-radius: 10px;
+      padding: 13px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    }
+    .section-title {
+      font-size: 11px;
+      color: #7c3aed;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+    }
+
+    /* ── Form ── */
+    .form-group { margin-bottom: 10px; }
+    .form-group:last-child { margin-bottom: 0; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 4px;
+    }
+    .label-hint {
+      font-size: 11px;
+      color: #9ca3af;
+      font-weight: 400;
+      margin-left: 4px;
+    }
+    input[type="text"],
+    input[type="password"],
+    input[type="url"],
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid #d1d5db;
+      border-radius: 7px;
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: inherit;
+      color: #111827;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+      background: #fff;
+    }
+    input:focus, select:focus, textarea:focus {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139,92,246,0.12);
+    }
+    textarea { resize: vertical; line-height: 1.5; }
+
+    .input-row {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .input-row input { flex: 1; }
+    .btn-test {
+      flex-shrink: 0;
+      background: #ede9fe;
+      color: #5b21b6;
+      border: none;
+      border-radius: 7px;
+      padding: 7px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .btn-test:hover { background: #ddd6fe; }
+
+    /* ── 连接状态 ── */
+    .api-status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-size: 11px;
+      margin-top: 5px;
+      min-height: 16px;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #d1d5db;
+      flex-shrink: 0;
+    }
+    .status-dot.ok  { background: #10b981; }
+    .status-dot.err { background: #ef4444; }
+    .status-dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── 房间列表 ── */
+    .room-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .room-card {
+      background: #f5f3ff;
+      border: 1px solid #ddd6fe;
+      border-radius: 8px;
+      padding: 8px 10px;
+      position: relative;
+    }
+    .room-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .room-name { font-weight: 600; font-size: 13px; color: #1e1b4b; }
+    .room-actions { display: flex; gap: 4px; }
+    .btn-icon-sm {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 1px 4px;
+      border-radius: 4px;
+      transition: background 0.1s;
+    }
+    .btn-icon-sm:hover { background: #ede9fe; }
+    .room-desc { font-size: 11px; color: #6b7280; line-height: 1.4; }
+
+    /* ── 批量抓取 ── */
+    .batch-row {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px;
+    }
+    .batch-row-success { color: #059669; }
+    .batch-row-fail { color: #dc2626; }
+
+    /* ── 规则列表 ── */
+    .rule-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+    .rule-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      background: #f5f3ff;
+      border: 1px solid #ddd6fe;
+      border-radius: 8px;
+      padding: 8px 10px;
+    }
+    .rule-number {
+      flex-shrink: 0;
+      width: 20px; height: 20px;
+      background: #4f46e5;
+      color: #fff;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rule-text { flex: 1; font-size: 12px; color: #1e1b4b; line-height: 1.5; }
+    .btn-del-rule {
+      flex-shrink: 0;
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #9ca3af;
+      font-size: 14px;
+      padding: 0 2px;
+      transition: color 0.1s;
+    }
+    .btn-del-rule:hover { color: #ef4444; }
+
+    /* ── 统计 ── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat-card {
+      background: #f5f3ff;
+      border-radius: 8px;
+      padding: 10px;
+      text-align: center;
+    }
+    .stat-value { font-size: 22px; font-weight: 800; color: #4f46e5; line-height: 1.1; }
+    .stat-label { font-size: 11px; color: #6b7280; margin-top: 3px; }
+
+    .style-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+    .tag {
+      background: #ede9fe; color: #5b21b6;
+      border-radius: 20px; padding: 2px 10px;
+      font-size: 11px; font-weight: 500;
+    }
+    .tag.green { background: #d1fae5; color: #065f46; }
+    .tag.blue  { background: #dbeafe; color: #1e40af; }
+
+    .phrase-cloud { display: flex; flex-wrap: wrap; gap: 5px; min-height: 32px; }
+    .phrase-item {
+      background: #ede9fe; color: #5b21b6;
+      border-radius: 4px; padding: 2px 8px;
+      font-size: 11px;
+    }
+    .empty-tip { color: #9ca3af; font-size: 12px; text-align: center; width: 100%; padding: 6px 0; }
+
+    /* ── 开关 ── */
+    .setting-row {
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 7px 0;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 13px; color: #374151; }
+    .setting-desc  { font-size: 11px; color: #9ca3af; }
+    .toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute; cursor: pointer; inset: 0;
+      background: #d1d5db; border-radius: 22px; transition: 0.2s;
+    }
+    .slider:before {
+      position: absolute; content: "";
+      height: 16px; width: 16px; left: 3px; bottom: 3px;
+      background: #fff; border-radius: 50%; transition: 0.2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    input:checked + .slider { background: #4f46e5; }
+    input:checked + .slider:before { transform: translateX(16px); }
+
+    /* ── Buttons ── */
+    .btn {
+      border: none; border-radius: 8px;
+      padding: 8px 14px; font-size: 13px;
+      cursor: pointer; font-weight: 600;
+      transition: opacity 0.15s;
+    }
+    .btn:hover { opacity: 0.85; }
+    .btn-primary { background: linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; }
+    .btn-secondary { background: #ede9fe; color: #5b21b6; }
+    .btn-danger { background: #fee2e2; color: #b91c1c; }
+    .btn-success { background: #d1fae5; color: #065f46; }
+    .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+    .btn-row .btn { flex: 1; text-align: center; }
+    .btn-full { width: 100%; text-align: center; }
+
+    #status-msg {
+      font-size: 12px; text-align: center;
+      margin-top: 6px; min-height: 16px;
+    }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0;
+      background: rgba(0,0,0,0.4); z-index: 100;
+      align-items: center; justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: #fff; border-radius: 12px;
+      padding: 18px; width: 340px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+    .modal h3 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: #1e1b4b; }
+    .modal .btn-row { margin-top: 14px; }
+
+    /* ── 抓取状态 ── */
+    .scrape-progress {
+      display: flex; align-items: center; gap: 8px;
+      background: #ede9fe; border-radius: 8px;
+      padding: 9px 12px; font-size: 12px; color: #4f46e5;
+    }
+    .scrape-spinner {
+      width: 14px; height: 14px; flex-shrink: 0;
+      border: 2px solid #c4b5fd;
+      border-top-color: #4f46e5;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── 抓取预览卡片 ── */
+    .preview-card {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .preview-header {
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 10px;
+    }
+    .preview-icon { font-size: 15px; }
+    .preview-name { flex: 1; font-weight: 700; font-size: 14px; color: #14532d; }
+    .preview-fields { display: flex; flex-direction: column; gap: 4px; }
+    .preview-field {
+      display: flex; gap: 6px; font-size: 11px;
+    }
+    .preview-field-label {
+      flex-shrink: 0; width: 52px;
+      color: #6b7280; font-weight: 600;
+    }
+    .preview-field-value {
+      color: #374151; word-break: break-word; line-height: 1.5;
+    }
+    .preview-tag {
+      display: inline-block;
+      background: #dcfce7; color: #166534;
+      border-radius: 4px; padding: 1px 6px;
+      font-size: 10px; margin: 1px 2px 1px 0;
+    }
+
+    /* ── 知识库 ── */
+    .kb-drop-zone {
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 4px;
+      border: 2px dashed #c4b5fd; border-radius: 10px;
+      padding: 20px 16px; cursor: pointer;
+      background: #faf5ff; transition: all 0.15s;
+      text-align: center;
+    }
+    .kb-drop-zone:hover, .kb-drop-zone.drag-over {
+      border-color: #7c3aed; background: #ede9fe;
+    }
+    .kb-drop-icon { font-size: 28px; line-height: 1; margin-bottom: 4px; }
+
+    .kb-stats-bar {
+      display: flex; align-items: center; gap: 10px;
+      background: #f5f3ff; border-radius: 8px;
+      padding: 8px 10px; margin-bottom: 8px;
+    }
+    .kb-stat { text-align: center; }
+    .kb-stat-value { font-size: 16px; font-weight: 800; color: #4f46e5; display: block; }
+    .kb-stat-label { font-size: 10px; color: #9ca3af; }
+
+    .kb-filter-row {
+      display: flex; gap: 6px; margin-bottom: 8px; align-items: center;
+    }
+
+    .kb-list {
+      max-height: 260px; overflow-y: auto;
+      display: flex; flex-direction: column; gap: 4px;
+      margin-bottom: 6px;
+    }
+    .kb-item {
+      border-radius: 7px; padding: 7px 10px;
+      background: #f9f7ff; border: 1px solid #e9d5ff;
+      font-size: 11px;
+    }
+    .kb-item.disabled {
+      opacity: 0.45; background: #f3f4f6; border-color: #e5e7eb;
+    }
+    .kb-item-header {
+      display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+    }
+    .kb-keyword {
+      background: #ede9fe; color: #5b21b6;
+      border-radius: 4px; padding: 1px 6px; font-size: 10px;
+      font-weight: 600; max-width: 160px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .kb-type-badge {
+      background: #dbeafe; color: #1e40af;
+      border-radius: 4px; padding: 1px 5px; font-size: 10px;
+    }
+    .kb-type-badge.booking { background: #d1fae5; color: #065f46; }
+    .kb-type-badge.checkin { background: #fce7f3; color: #9d174d; }
+    .kb-item-content {
+      color: #374151; line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .kb-item-prop {
+      margin-top: 3px;
+      color: #9ca3af; font-size: 10px;
+    }
+
+    .kb-pagination {
+      display: flex; justify-content: center; gap: 4px;
+      font-size: 11px; margin-top: 2px;
+    }
+    .kb-page-btn {
+      border: 1px solid #ddd6fe; border-radius: 5px;
+      padding: 2px 8px; cursor: pointer;
+      background: #fff; color: #5b21b6;
+      font-size: 11px;
+    }
+    .kb-page-btn.active {
+      background: #4f46e5; color: #fff; border-color: #4f46e5;
+    }
+    .kb-page-btn:hover:not(.active) { background: #f5f3ff; }
+
+    /* ── Open Link ── */
+    .open-link {
+      display: block; text-align: center;
+      margin: 0 10px 10px;
+      padding: 10px;
+      background: linear-gradient(135deg,#4f46e5,#7c3aed);
+      color: #fff; border-radius: 10px;
+      text-decoration: none; font-weight: 600;
+      font-size: 13px; transition: opacity 0.15s;
+    }
+    .open-link:hover { opacity: 0.9; }
+  </style>
+</head>
+<body>
+
+<div class="popup-header">
+  <h1>🏠 智能回复助手</h1>
+  <div class="subtitle">MyHostex · AI 驱动 · 了解你的房间 · 学习你的风格</div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="tab-ai">🤖 AI 配置</button>
+  <button class="tab-btn" data-tab="tab-rooms">🏠 房间信息</button>
+  <button class="tab-btn" data-tab="tab-rules">📋 回复规则</button>
+  <button class="tab-btn" data-tab="tab-style">📊 风格</button>
+</div>
+
+<!-- ══════════ TAB: AI 配置 ══════════ -->
+<div class="tab-panel active" id="tab-ai">
+
+  <div class="section">
+    <div class="section-title">🔌 大模型接入</div>
+
+    <div class="form-group">
+      <label>模型提供商</label>
+      <select id="ai-provider">
+        <option value="openai">OpenAI (GPT-4o / GPT-4)</option>
+        <option value="deepseek">DeepSeek</option>
+        <option value="qwen">通义千问 (Qwen)</option>
+        <option value="zhipu">智谱 GLM</option>
+        <option value="custom">自定义 API（兼容 OpenAI 格式）</option>
+      </select>
+    </div>
+
+    <div class="form-group" id="group-base-url" style="display:none">
+      <label>API Base URL</label>
+      <input type="url" id="ai-base-url" placeholder="https://api.example.com/v1" />
+    </div>
+
+    <div class="form-group">
+      <label>API Key</label>
+      <div class="input-row">
+        <input type="password" id="ai-api-key" placeholder="sk-..." autocomplete="off" />
+        <button class="btn-test" id="btn-test-api">测试连接</button>
+      </div>
+      <div class="api-status">
+        <div class="status-dot" id="api-dot"></div>
+        <span id="api-status-text">未配置</span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>模型名称 <span class="label-hint">（留空使用默认）</span></label>
+      <input type="text" id="ai-model" placeholder="gpt-4o" />
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">⚙️ 生成参数</div>
+    <div class="form-group">
+      <label>最多建议条数</label>
+      <select id="ai-max-suggestions">
+        <option value="3">3 条</option>
+        <option value="4">4 条</option>
+        <option value="5" selected>5 条</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>回复语言偏好</label>
+      <select id="ai-lang">
+        <option value="auto">自动（跟随客人语言）</option>
+        <option value="zh">中文</option>
+        <option value="en">英文</option>
+        <option value="bilingual">中英双语</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="btn-row" style="padding: 0 0 10px">
+    <button class="btn btn-primary btn-full" id="btn-save-ai">保存 AI 配置</button>
+  </div>
+  <div id="status-msg"></div>
+</div>
+
+<!-- ══════════ TAB: 房间信息 ══════════ -->
+<div class="tab-panel" id="tab-rooms">
+
+  <!-- 新增：链接抓取区（支持单个房源详情页/批量列表页） -->
+  <div class="section">
+    <div class="section-title">🔗 自动抓取房源信息</div>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px;line-height:1.6">
+      粘贴任意民宿后台的链接，自动抓取房间信息并存入知识库。<br>
+      <span style="color:#9ca3af">支持两种链接：</span>
+    </p>
+    <div style="font-size:11px;color:#6b7280;margin:0 0 10px 0;line-height:1.6;padding:8px 10px;background:#f3f4f6;border-radius:6px">
+      • <b>单个房源详情页</b>：任意平台的房源详情页链接 → 抓取1个房间<br>
+      • <b>房源列表页</b>：任意平台的房源列表页链接 → 批量抓取所有房间<br>
+      <span style="color:#ef4444">⚠️ 需保持对应平台登录状态</span>
+    </div>
+    <div class="form-group">
+      <label>房源链接（详情页或列表页）</label>
+      <div class="input-row">
+        <input type="url" id="scrape-url"
+          placeholder="https://任意民宿后台.com/listings 或 /listings/123" />
+        <button class="btn-test" id="btn-scrape">🚀 开始抓取</button>
+      </div>
+    </div>
+
+    <!-- 批量抓取进度 -->
+    <div id="batch-progress" style="display:none;margin-top:12px;padding:10px;background:#f5f3ff;border-radius:8px;border:1px solid #ddd6fe">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+        <span style="font-size:12px;font-weight:600;color:#4f46e5" id="batch-status-text">正在扫描列表页...</span>
+        <button class="btn-icon-sm" id="btn-cancel-batch" style="color:#ef4444;font-size:12px">停止</button>
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:8px" id="batch-detail-text"></div>
+      <!-- 进度条 -->
+      <div style="background:#e9d5ff;border-radius:6px;height:18px;overflow:hidden;position:relative">
+        <div id="batch-bar" style="background:#4f46e5;height:100%;width:0%;transition:width 0.3s"></div>
+        <span id="batch-percent" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:10px;color:#fff;font-weight:700;white-space:nowrap">0%</span>
+      </div>
+    </div>
+
+    <!-- 单条抓取进度（原有） -->
+    <div id="scrape-status" style="display:none">
+      <div class="scrape-progress">
+        <div class="scrape-spinner" id="scrape-spinner"></div>
+        <span id="scrape-status-text">正在打开页面...</span>
+      </div>
+    </div>
+
+    <!-- 单条抓取结果预览（原有） -->
+    <div id="scrape-preview" style="display:none">
+      <div class="preview-card">
+        <div class="preview-header">
+          <span class="preview-icon">✅</span>
+          <span id="preview-name" class="preview-name"></span>
+          <button class="btn-icon-sm" id="btn-discard-preview" title="丢弃">✕</button>
+        </div>
+        <div class="preview-fields" id="preview-fields"></div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn btn-secondary" id="btn-edit-scraped">✏️ 编辑后添加</button>
+          <button class="btn btn-primary"   id="btn-confirm-scraped">✅ 直接添加</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 已保存房间列表 -->
+  <div class="section">
+    <div class="section-title">🏠 已保存的房间</div>
+    <div class="room-list" id="room-list">
+      <div class="empty-tip">还没有添加房间，请通过上方链接抓取或手动添加</div>
+    </div>
+    <button class="btn btn-secondary btn-full" id="btn-add-room">＋ 手动添加房间</button>
+  </div>
+
+</div>
+
+<!-- ══════════ TAB: 回复规则 ══════════ -->
+<div class="tab-panel" id="tab-rules">
+
+  <!-- ★ 知识库导入 -->
+  <div class="section">
+    <div class="section-title">📚 回复知识库</div>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px;line-height:1.6">
+      导入从 myhostex 导出的自动化规则文件（JSON 格式），AI 回复时自动按关键词匹配最相关的条目。
+    </p>
+
+    <!-- 导入区 -->
+    <div id="kb-empty-state">
+      <label class="kb-drop-zone" id="kb-drop-zone">
+        <div class="kb-drop-icon">📂</div>
+        <div style="font-size:13px;font-weight:600;color:#4f46e5">点击选择或拖入文件</div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:3px">支持 .json 格式（百居易导出的自动化规则）</div>
+        <input type="file" id="kb-file-input" accept=".json" style="display:none" />
+      </label>
+    </div>
+
+    <!-- 知识库已加载状态 -->
+    <div id="kb-loaded-state" style="display:none">
+      <div class="kb-stats-bar">
+        <div class="kb-stat">
+          <span class="kb-stat-value" id="kb-total">0</span>
+          <span class="kb-stat-label">条规则</span>
+        </div>
+        <div class="kb-stat">
+          <span class="kb-stat-value" id="kb-enabled">0</span>
+          <span class="kb-stat-label">已启用</span>
+        </div>
+        <div class="kb-stat">
+          <span class="kb-stat-value" id="kb-types">0</span>
+          <span class="kb-stat-label">触发类型</span>
+        </div>
+        <button class="btn-icon-sm" id="kb-reload-btn" title="重新导入" style="margin-left:auto">🔄</button>
+        <button class="btn-icon-sm" id="kb-clear-btn" title="清空知识库" style="color:#ef4444">🗑️</button>
+      </div>
+
+      <!-- 搜索 + 过滤 -->
+      <div class="kb-filter-row">
+        <input type="text" id="kb-search" placeholder="🔍 搜索关键词或内容..." style="flex:1;font-size:12px" />
+        <select id="kb-filter-type" style="width:110px;font-size:12px">
+          <option value="">全部类型</option>
+          <option value="关键词回复">关键词回复</option>
+          <option value="booking">新订单</option>
+          <option value="checkin_checkout">入离店</option>
+          <option value="inquiry_question">咨询问题</option>
+        </select>
+      </div>
+
+      <!-- 条目列表 -->
+      <div class="kb-list" id="kb-list">
+        <!-- 动态渲染 -->
+      </div>
+      <div id="kb-pagination" class="kb-pagination"></div>
+    </div>
+
+    <div id="kb-import-status" style="font-size:12px;margin-top:6px;min-height:14px"></div>
+  </div>
+
+  <!-- 手动规则 -->
+  <div class="section">
+    <div class="section-title">📋 补充回复规则 <span class="label-hint">（注入 AI 提示词）</span></div>
+    <p style="font-size:12px;color:#6b7280;margin-bottom:10px;line-height:1.6">
+      这些规则会直接注入 AI 的提示词，配合知识库共同约束 AI 的回复行为。
+    </p>
+    <div class="rule-list" id="rule-list">
+      <div class="empty-tip">还没有添加规则</div>
+    </div>
+    <div class="input-row" style="margin-bottom:8px">
+      <input type="text" id="new-rule-input" placeholder="例：价格问题不要轻易打折，引导去平台预订" />
+      <button class="btn-test" id="btn-add-rule">添加</button>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">💡 预设规则模板</div>
+    <div style="display:flex;flex-direction:column;gap:6px" id="rule-templates">
+      <!-- 动态渲染 -->
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ TAB: 风格学习 ══════════ -->
+<div class="tab-panel" id="tab-style">
+  <div class="section">
+    <div class="section-title">📊 风格学习进度</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-count">0</div>
+        <div class="stat-label">已学习回复</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-level">🥚</div>
+        <div class="stat-label">进化阶段</div>
+      </div>
+    </div>
+    <div class="style-tags" id="style-tags">
+      <span class="tag" id="tag-lang" style="display:none"></span>
+      <span class="tag green" id="tag-tone" style="display:none"></span>
+      <span class="tag blue"  id="tag-len"  style="display:none"></span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">💬 您的常用表达</div>
+    <div class="phrase-cloud" id="phrase-cloud">
+      <span class="empty-tip">回复更多消息后将显示常用词汇</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">⚙️ 通用设置</div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">有新消息自动展开</div>
+        <div class="setting-desc">检测到未读消息时自动弹出面板</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-autoExpand" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">风格学习</div>
+        <div class="setting-desc">记录您的回复并进化建议风格</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-learnMode" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="setting-row">
+      <div>
+        <div class="setting-label">桌面通知</div>
+        <div class="setting-desc">新消息到达时推送系统通知</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="setting-notifyEnabled" checked />
+        <span class="slider"></span>
+      </label>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-save-settings">保存设置</button>
+      <button class="btn btn-danger"  id="btn-clear-style">清除学习数据</button>
+    </div>
+    <div id="status-msg-style"></div>
+  </div>
+</div>
+
+<!-- ── 房间编辑 Modal ── -->
+<div class="modal-overlay" id="room-modal">
+  <div class="modal" style="width:360px;max-height:90vh;overflow-y:auto">
+    <h3 id="room-modal-title">添加房间</h3>
+    <div class="form-group">
+      <label>房间名称</label>
+      <input type="text" id="room-name" placeholder="例：大床房A / 整租公寓501" />
+    </div>
+    <div class="form-group">
+      <label>房间描述 <span class="label-hint">（AI 会据此生成更准确的回复）</span></label>
+      <textarea id="room-desc" rows="4"
+        placeholder="例：两室一厅，可住4人，配备独立厨房、洗衣机。最近装修，位于4楼无电梯。宠物友好但需提前告知。"></textarea>
+    </div>
+    <div class="form-group">
+      <label>价格区间</label>
+      <input type="text" id="room-price" placeholder="例：工作日¥280，周末¥380，节假日¥480" />
+    </div>
+    <div class="form-group">
+      <label>位置</label>
+      <input type="text" id="room-location" placeholder="例：上海市徐汇区衡山路附近" />
+    </div>
+    <div class="form-group">
+      <label>入住 / 退房时间</label>
+      <input type="text" id="room-checkin" placeholder="例：入住14:00，退房12:00" />
+    </div>
+    <div class="form-group">
+      <label>WiFi 信息</label>
+      <input type="text" id="room-wifi" placeholder="例：WiFi: MyHome5G，密码: 12345678" />
+    </div>
+    <div class="form-group">
+      <label>停车说明</label>
+      <input type="text" id="room-parking" placeholder="例：小区地下停车场，每天20元" />
+    </div>
+    <div class="form-group">
+      <label>特殊说明 / 规则</label>
+      <input type="text" id="room-notes" placeholder="例：不可举办聚会，禁止吸烟" />
+    </div>
+    <div class="form-group">
+      <label>房源链接 <span class="label-hint">（记录来源）</span></label>
+      <input type="url" id="room-url" placeholder="https://www.myhostex.com/..." />
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" id="room-modal-cancel">取消</button>
+      <button class="btn btn-primary"   id="room-modal-save">保存</button>
+    </div>
+  </div>
+</div>
+
+<a href="https://www.myhostex.com/app/inbox" target="_blank" class="open-link" style="margin-top:6px">
+  📬 打开 MyHostex 收件箱
+</a>
+
+<script src="popup.js"></script>
+</body>
+</html>
