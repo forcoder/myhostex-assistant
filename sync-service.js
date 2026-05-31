@@ -50,7 +50,7 @@ class SyncService {
 
   /**
    * 导出所有同步数据为 JSON
-   * @returns {Promise<string>} 导出的 JSON 字符串
+   * @returns {Promise<{json: string, stats: Object}>} 导出的 JSON 字符串和统计信息
    */
   async exportData() {
     try {
@@ -78,7 +78,26 @@ class SyncService {
       };
 
       console.log('[SyncService] 数据导出成功，keys:', Object.keys(data));
-      return JSON.stringify(exportPackage, null, 2);
+
+      // 添加导出统计（按数据类型分类）
+      const statsByType = {};
+      for (const key of this.SYNC_KEYS) {
+        if (data[key] !== undefined) {
+          const value = data[key];
+          if (Array.isArray(value)) {
+            statsByType[key] = value.length;
+          } else if (typeof value === "object") {
+            statsByType[key] = Object.keys(value).length;
+          } else {
+            statsByType[key] = 1;
+          }
+        }
+      }
+
+      return {
+        json: JSON.stringify(exportPackage, null, 2),
+        stats: statsByType
+      };
     } catch (error) {
       console.error('[SyncService] 导出数据失败:', error);
       throw new Error(`数据导出失败: ${error.message}`);
