@@ -1245,6 +1245,10 @@ async function init() {
 
   // 同步状态
   loadSyncStatus();
+
+  // 初始化同步登录
+  SyncUI.initSyncUI();
+  initSyncAuth();
 }
 
 // ═══════════════════════════════════════════════
@@ -1369,7 +1373,7 @@ document.getElementById("btn-sync-import").addEventListener("click", async () =>
 
       // 询问合并策略
       const merge = confirm(
-        "导入模式选择：\n\n✅ 确定：合并模式（保留已有数据，新增数据合并）\n❌ 取消：覆盖模式（完全替换为导入数据）\n\n建议首次导入选择"确定"，后续同步选择"取消"覆盖。"
+        '导入模式选择：\n\n✅ 确定：合并模式（保留已有数据，新增数据合并）\n❌ 取消：覆盖模式（完全替换为导入数据）\n\n建议首次导入选择"确定"，后续同步选择"取消"覆盖。'
       );
 
       msgEl.textContent = "⏳ 正在导入数据...";
@@ -1411,5 +1415,157 @@ if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {
   init();
+}
+
+// ── 同步登录/注册事件绑定 ─────────────────────
+async function initSyncAuth() {
+  // 加载认证状态
+  await syncAuthManager.loadAuthState();
+  updateSyncAuthUI();
+
+  // 监听认证状态变更
+  syncAuthManager.addListener(updateSyncAuthUI);
+
+  // 登录按钮
+  document.getElementById("btn-sync-login")?.addEventListener("click", () => {
+    document.getElementById("login-modal").classList.add("open");
+  });
+
+  // 注册按钮
+  document.getElementById("btn-sync-register")?.addEventListener("click", () => {
+    document.getElementById("register-modal").classList.add("open");
+  });
+
+  // 登录对话框取消
+  document.getElementById("login-cancel")?.addEventListener("click", () => {
+    document.getElementById("login-modal").classList.remove("open");
+  });
+
+  // 注册对话框取消
+  document.getElementById("register-cancel")?.addEventListener("click", () => {
+    document.getElementById("register-modal").classList.remove("open");
+  });
+
+  // 登录提交
+  document.getElementById("login-submit")?.addEventListener("click", handleLoginSubmit);
+
+  // 注册提交
+  document.getElementById("register-submit")?.addEventListener("click", handleRegisterSubmit);
+
+  // 登出按钮
+  document.getElementById("btn-sync-logout")?.addEventListener("click", handleLogout);
+
+  // 立即同步按钮（云端同步，需登录）
+  document.getElementById("btn-sync-now")?.addEventListener("click", handleCloudSync);
+
+  // 点击对话框背景关闭
+  document.getElementById("login-modal")?.addEventListener("click", (e) => {
+    if (e.target.classList.contains("modal-overlay")) {
+      e.target.classList.remove("open");
+    }
+  });
+  document.getElementById("register-modal")?.addEventListener("click", (e) => {
+    if (e.target.classList.contains("modal-overlay")) {
+      e.target.classList.remove("open");
+    }
+  });
+}
+
+// 更新同步区域 UI 状态
+function updateSyncAuthUI() {
+  const unauthEl = document.getElementById("sync-unauthenticated");
+  const authEl = document.getElementById("sync-authenticated");
+  const tenantEl = document.getElementById("sync-tenant-id");
+
+  if (syncAuthManager.isLoggedIn()) {
+    unauthEl.style.display = "none";
+    authEl.style.display = "block";
+    const auth = syncAuthManager.getAuth();
+    if (tenantEl && auth) {
+      tenantEl.textContent = `租户: ${auth.tenantId || auth.userId}`;
+    }
+  } else {
+    unauthEl.style.display = "block";
+    authEl.style.display = "none";
+  }
+}
+
+// 处理登录提交
+async function handleLoginSubmit() {
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  const errorEl = document.getElementById("login-error");
+  const submitBtn = document.getElementById("login-submit");
+
+  if (!email || !password) {
+    errorEl.textContent = "请填写邮箱和密码";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "登录中...";
+  errorEl.style.display = "none";
+
+  const result = await syncAuthManager.login(email, password);
+  if (result.success) {
+    document.getElementById("login-modal").classList.remove("open");
+    document.getElementById("login-email").value = "";
+    document.getElementById("login-password").value = "";
+  } else {
+    errorEl.textContent = result.message;
+    errorEl.style.display = "block";
+  }
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = "登录";
+}
+
+// 处理注册提交
+async function handleRegisterSubmit() {
+  const displayName = document.getElementById("register-display-name").value.trim();
+  const email = document.getElementById("register-email").value.trim();
+  const password = document.getElementById("register-password").value;
+  const errorEl = document.getElementById("register-error");
+  const submitBtn = document.getElementById("register-submit");
+
+  if (!displayName || !email || password.length < 6) {
+    errorEl.textContent = "请填写完整信息，密码至少6位";
+    errorEl.style.display = "block";
+    return;
+  }
+
+  submitBtn.disabled = true;
+  submitBtn.textContent = "注册中...";
+  errorEl.style.display = "none";
+
+  const result = await syncAuthManager.register(email, password, displayName);
+  if (result.success) {
+    document.getElementById("register-modal").classList.remove("open");
+    document.getElementById("register-display-name").value = "";
+    document.getElementById("register-email").value = "";
+    document.getElementById("register-password").value = "";
+  } else {
+    errorEl.textContent = result.message;
+    errorEl.style.display = "block";
+  }
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = "注册";
+}
+
+// 处理登出
+async function handleLogout() {
+  await syncAuthManager.logout();
+  document.getElementById("sync-detail").style.display = "none";
+}
+
+// 处理云端同步（需登录）
+async function handleCloudSync() {
+  if (!syncAuthManager.isLoggedIn()) {
+    document.getElementById("login-modal").classList.add("open");
+    return;
+  }
+  await handleSyncNow();
 }
 
