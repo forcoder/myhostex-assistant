@@ -118,6 +118,41 @@ class SyncAuthManager {
     await this.clearAuthState();
     return { success: true, message: "已登出" };
   }
+
+  /**
+   * 如果 token 即将过期（5分钟内），自动刷新
+   * @returns {Promise<boolean>} 是否刷新成功
+   */
+  async refreshTokenIfNeeded() {
+    if (!this._auth?.refreshToken) return false;
+
+    const fiveMinutes = 5 * 60 * 1000;
+    if (this._auth.expiresAt - Date.now() > fiveMinutes) return false;
+
+    try {
+      const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
+      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken: this._auth.refreshToken })
+      });
+      const result = await resp.json();
+      if (result.isSuccess && result.data) {
+        const auth = {
+          userId: result.data.userId,
+          tenantId: result.data.tenantId || result.data.userId,
+          accessToken: result.data.accessToken,
+          refreshToken: result.data.refreshToken || this._auth.refreshToken,
+          expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
+        };
+        await this.saveAuthState(auth);
+        return true;
+      }
+    } catch (err) {
+      console.error("[SyncAuth] Token 刷新失败:", err);
+    }
+    return false;
+  }
 }
 
 const syncAuthManager = new SyncAuthManager();
@@ -452,7 +487,7 @@ function formatSyncDetail(stats) {
     if (stats.push.settings > 0) pushItems.push(`设置 ${stats.push.settings} 条`);
   }
   if (pushItems.length > 0) {
-    lines.push(`<div style="margin-top:4px"><span style="color:#7c3aed">📤 推送:</span> ${pushItems.join("，")}</div>`);
+    lines.push(`<div style="margin-top:4px"><span style="color:#7c3aed">📤 推送:</span> ${escapeHtml(pushItems.join("，"))}</div>`);
   }
 
   // 拉取变更 - 只显示有数据的类型
@@ -467,10 +502,19 @@ function formatSyncDetail(stats) {
     if (stats.pull.settings > 0) pullItems.push(`设置 ${stats.pull.settings} 条`);
   }
   if (pullItems.length > 0) {
-    lines.push(`<div style="margin-top:4px"><span style="color:#2563eb">📥 拉取:</span> ${pullItems.join("，")}</div>`);
+    lines.push(`<div style="margin-top:4px"><span style="color:#2563eb">📥 拉取:</span> ${escapeHtml(pullItems.join("，"))}</div>`);
   }
 
   return lines.join("");
+}
+
+/**
+ * HTML 转义（防止 XSS）
+ */
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
 }
 
 /**
@@ -478,8 +522,11 @@ function formatSyncDetail(stats) {
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
   const { cloudEndpoint } = syncConfig;
-  const token = syncAuthManager.getAccessToken();
 
+  // 尝试刷新 token（如果即将过期）
+  await syncAuthManager.refreshTokenIfNeeded();
+
+  const token = syncAuthManager.getAccessToken();
   if (!cloudEndpoint || !token) {
     return { success: false, message: "未登录或未配置云端" };
   }
