@@ -1369,7 +1369,7 @@ document.getElementById("btn-sync-import").addEventListener("click", async () =>
 
       // 询问合并策略
       const merge = confirm(
-        "导入模式选择：\n\n✅ 确定：合并模式（保留已有数据，新增数据合并）\n❌ 取消：覆盖模式（完全替换为导入数据）\n\n建议首次导入选择"确定"，后续同步选择"取消"覆盖。"
+        '导入模式选择：\n\n✅ 确定：合并模式（保留已有数据，新增数据合并）\n❌ 取消：覆盖模式（完全替换为导入数据）\n\n建议首次导入选择"确定"，后续同步选择"取消"覆盖。'
       );
 
       msgEl.textContent = "⏳ 正在导入数据...";
