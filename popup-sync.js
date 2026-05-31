@@ -403,7 +403,8 @@ async function handleExportData() {
       msgEl.style.color = "#6b7280";
     }
 
-    const jsonData = await syncService.exportData();
+    const exportResult = await syncService.exportData();
+    const jsonData = exportResult.json;
 
     // 创建下载
     const blob = new Blob([jsonData], { type: "application/json" });
