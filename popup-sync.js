@@ -63,15 +63,21 @@ class SyncAuthManager {
   _notifyListeners() { this._listeners.forEach(cb => cb(this._auth)); }
 
   async login(email, password) {
-    const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
+    // 云端同步服务器地址（可配置）
+    const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
+    console.log("[SyncAuth] 登录请求:", SYNC_SERVER_URL);
+
     try {
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/login`, {
+      const resp = await fetch(`${SYNC_SERVER_URL}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ email, password }),
+        mode: "cors"
       });
       const result = await resp.json();
-      if (result.isSuccess && result.data) {
+      console.log("[SyncAuth] 登录响应:", result);
+      // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
+      if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
           userId: result.data.userId,
           tenantId: result.data.tenantId || result.data.userId,
@@ -84,20 +90,27 @@ class SyncAuthManager {
       }
       return { success: false, message: result.message || "登录失败" };
     } catch (err) {
+      console.error("[SyncAuth] 登录失败:", err);
       return { success: false, message: `网络错误: ${err.message}` };
     }
   }
 
   async register(email, password, displayName) {
-    const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
+    // 云端同步服务器地址（可配置）
+    const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
+    console.log("[SyncAuth] 注册请求:", SYNC_SERVER_URL);
+
     try {
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/register`, {
+      const resp = await fetch(`${SYNC_SERVER_URL}/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName })
+        body: JSON.stringify({ email, password, displayName }),
+        mode: "cors"
       });
       const result = await resp.json();
-      if (result.isSuccess && result.data) {
+      console.log("[SyncAuth] 注册响应:", result);
+      // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
+      if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
           userId: result.data.userId,
           tenantId: result.data.tenantId || result.data.userId,
@@ -110,6 +123,7 @@ class SyncAuthManager {
       }
       return { success: false, message: result.message || "注册失败" };
     } catch (err) {
+      console.error("[SyncAuth] 注册失败:", err);
       return { success: false, message: `网络错误: ${err.message}` };
     }
   }
@@ -130,8 +144,8 @@ class SyncAuthManager {
     if (this._auth.expiresAt - Date.now() > fiveMinutes) return false;
 
     try {
-      const endpoint = syncConfig.cloudEndpoint || "https://your-sync-server.com";
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/refresh`, {
+      const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
+      const resp = await fetch(`${SYNC_SERVER_URL}/auth/refresh`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: this._auth.refreshToken })
@@ -394,6 +408,10 @@ async function testCloudConnection(endpoint, apiKey) {
 async function handleSyncNow() {
   console.log("[Popup-Sync] 执行立即同步");
 
+  // 确保同步配置和认证状态已加载
+  await loadSyncSettings();
+  await syncAuthManager.loadAuthState();
+
   // 检查登录状态
   if (!syncAuthManager.isLoggedIn()) {
     const msgEl = document.getElementById("sync-msg");
@@ -521,18 +539,19 @@ function escapeHtml(str) {
  * 带认证上传到云端
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
-  const { cloudEndpoint } = syncConfig;
+  const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
 
   // 尝试刷新 token（如果即将过期）
   await syncAuthManager.refreshTokenIfNeeded();
 
   const token = syncAuthManager.getAccessToken();
-  if (!cloudEndpoint || !token) {
+  if (!token) {
+    console.error("[Sync] token 不存在");
     return { success: false, message: "未登录或未配置云端" };
   }
 
   try {
-    const url = `${cloudEndpoint.replace(/\/$/, "")}/sync/upload`;
+    const url = `${SYNC_SERVER_URL}/sync/push`;
     const resp = await fetch(url, {
       method: "POST",
       headers: {
