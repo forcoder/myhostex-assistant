@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MyHostex 智能回复助手",
-  "version": "3.13.2",
+  "version": "3.13.3",
   "description": "接入大模型，结合房间信息（自动抓取）与回复规则，智能生成个性化回复建议，并学习房东回复风格 - v3.13.2 云端同步功能",
   "permissions": [
     "storage",
