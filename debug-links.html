@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>链接提取诊断工具</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 1200px; margin: 0 auto; }
+    .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; }
+    h2 { color: #333; margin-top: 0; }
+    textarea { width: 100%; height: 100px; padding: 8px; font-family: monospace; }
+    button { padding: 10px 20px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    #results { margin-top: 15px; }
+    .url-item { padding: 5px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 12px; }
+    .url-item:hover { background: #f5f5f5; }
+    .count { font-weight: bold; color: #2563eb; }
+  </style>
+</head>
+<body>
+  <h1>🔍 房源链接提取诊断工具</h1>
+
+  <div class="section">
+    <h2>📝 输入页面 HTML</h2>
+    <p>将目标民宿列表页的 HTML 粘贴到下方（右键查看网页源代码，复制所有内容）</p>
+    <textarea id="htmlInput" placeholder="粘贴页面 HTML 代码..."></textarea>
+    <button onclick="analyze()">开始分析</button>
+  </div>
+
+  <div class="section">
+    <h2>📊 分析结果</h2>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    function analyze() {
+      const htmlInput = document.getElementById('htmlInput');
+      const html = htmlInput.value;
+
+      console.log('开始分析，HTML 长度:', html.length);
+
+      if (!html.trim()) {
+        alert('请先粘贴 HTML 代码');
+        return;
+      }
+
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const urls = new Set();
+
+      // 扫描所有 <a> 标签
+      const links = doc.querySelectorAll('a[href]');
+      console.log('找到链接数量:', links.length);
+
+      links.forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href) return;
+        const fullUrl = href;
+
+        // 匹配房源详情链接
+        const isDetailUrl = /\/(?:listings|room|rooms|property|home|house|stay|accommodation|listing|villa|apartment|detail)\/[\w\-]+/.test(fullUrl);
+        const isListUrl = /\/(?:listings|rooms|properties|houses|homes|stays|accommodations)(\/|\?|$)/.test(fullUrl);
+        const isFilterUrl = /[\?\&](?:filter|sort|page|size)/.test(fullUrl);
+        const isApiUrl = /\/api\//.test(fullUrl);
+
+        if (isDetailUrl && !isListUrl && !isFilterUrl && !isApiUrl) {
+          urls.add(fullUrl);
+        }
+      });
+
+      // 从 data-* 属性提取
+      const dataElements = doc.querySelectorAll('[data-room-id], [data-house-id], [data-id]');
+      console.log('找到 data-* 元素数量:', dataElements.length);
+
+      dataElements.forEach(el => {
+        const roomId = el.getAttribute('data-room-id') || el.getAttribute('data-house-id');
+        const dataId = el.getAttribute('data-id');
+        const id = roomId || dataId;
+        if (id && id.length >= 4) {
+          urls.add(`[data-id]: ${id}`);
+        }
+      });
+
+      // 从 HTML 文本中提取路径
+      const patterns = [
+        /\/listings\/[\w\-]+/g,
+        /\/room\/[\w\-]+/g,
+        /\/rooms\/[\w\-]+/g,
+        /\/property\/[\w\-]+/g,
+        /\/home\/[\w\-]+/g,
+        /\/house\/[\w\-]+/g,
+        /\/stay\/[\w\-]+/g,
+        /\/accommodation\/[\w\-]+/g,
+        /\/detail\/[\w\-]+/g,
+      ];
+
+      patterns.forEach(p => {
+        const matches = html.match(p) || [];
+        matches.forEach(m => urls.add(m));
+      });
+
+      console.log('提取到的唯一链接数:', urls.size);
+
+      // 显示结果
+      const resultsDiv = document.getElementById('results');
+      const urlList = Array.from(urls);
+
+      let htmlContent = `
+        <p><span class="count">${urlList.length}</span> 个潜在的房源链接/ID</p>
+        <div style="max-height: 400px; overflow-y: auto;">
+      `;
+
+      if (urlList.length === 0) {
+        htmlContent += '<p style="color: red;">❌ 未找到任何房源链接，可能需要登录或有动态加载内容</p>';
+        htmlContent += '<p style="color: #666; font-size: 14px;">💡 提示：尝试滚动页面后重新查看源代码，或者使用开发者工具 Network 标签查看 AJAX 请求</p>';
+      } else {
+        urlList.forEach((url, i) => {
+          htmlContent += `<div class="url-item">${i + 1}. ${url}</div>`;
+        });
+      }
+
+      htmlContent += '</div>';
+      resultsDiv.innerHTML = htmlContent;
+    }
+
+    // 页面加载完成后初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log('页面加载完成');
+      const htmlInput = document.getElementById('htmlInput');
+      htmlInput.value = `<!-- 粘贴大众点评民宿列表页的 HTML 源代码到这里 -->
+<!-- 右键点击页面 -> "查看网页源代码" -> 全选复制粘贴 -->`;
+
+      // 给按钮添加事件监听
+      const btn = document.querySelector('button');
+      if (btn) {
+        console.log('按钮找到，添加点击事件');
+        btn.addEventListener('click', function(e) {
+          e.preventDefault();
+          console.log('按钮被点击');
+          analyze();
+        });
+      }
+    });
+  </script>
+</body>
+</html>

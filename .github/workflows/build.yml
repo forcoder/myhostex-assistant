@@ -1,0 +1,164 @@
+name: Build Chrome Extension
+
+on:
+  push:
+    branches: [ main, master ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如 v3.13.3)'
+        required: false
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 读取 Manifest 版本
+        id: manifest
+        run: |
+          VERSION=$(jq -r '.version' manifest.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "name=$(jq -r '.name' manifest.json)" >> $GITHUB_OUTPUT
+
+      - name: 确定构建版本号
+        id: version
+        run: |
+          if [[ "${{ github.event.inputs.version }}" != "" ]]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=v${{ steps.manifest.outputs.version }}-build-${{ github.run_number }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 校验 Manifest
+        run: |
+          echo "📋 扩展名称: ${{ steps.manifest.outputs.name }}"
+          echo "📋 版本: ${{ steps.manifest.outputs.version }}"
+          jq '.' manifest.json > /dev/null && echo "✅ manifest.json 格式正确"
+
+      - name: 检查必需文件
+        run: |
+          REQUIRED_FILES=(
+            "manifest.json"
+            "background.js"
+            "content.js"
+            "injected.js"
+            "popup.html"
+            "popup.js"
+            "popup-sync.js"
+            "sync-service.js"
+            "styles/panel.css"
+          )
+          MISSING=0
+          for f in "${REQUIRED_FILES[@]}"; do
+            if [ -f "$f" ]; then
+              echo "  ✅ $f"
+            else
+              echo "  ❌ $f - 缺失"
+              MISSING=$((MISSING+1))
+            fi
+          done
+          if [ $MISSING -gt 0 ]; then
+            echo "❌ 缺少 $MISSING 个必需文件"
+            exit 1
+          fi
+          echo "✅ 所有必需文件存在"
+
+      - name: 构建扩展包
+        run: |
+          BUILD_DIR="build/MyHostex-Assistant-v${{ steps.manifest.outputs.version }}"
+          mkdir -p "$BUILD_DIR"
+
+          # 复制所有扩展文件
+          cp manifest.json "$BUILD_DIR/"
+          cp background.js "$BUILD_DIR/"
+          cp content.js "$BUILD_DIR/"
+          cp injected.js "$BUILD_DIR/"
+          cp popup.html "$BUILD_DIR/"
+          cp popup.js "$BUILD_DIR/"
+          cp popup-sync.js "$BUILD_DIR/"
+          cp sync-service.js "$BUILD_DIR/"
+          cp popup_ai_config.js "$BUILD_DIR/" 2>/dev/null || true
+
+          # 样式
+          mkdir -p "$BUILD_DIR/styles"
+          cp styles/panel.css "$BUILD_DIR/styles/"
+
+          # 图标
+          mkdir -p "$BUILD_DIR/icons"
+          cp icons/icon16.png "$BUILD_DIR/icons/" 2>/dev/null || true
+          cp icons/icon48.png "$BUILD_DIR/icons/" 2>/dev/null || true
+          cp icons/icon128.png "$BUILD_DIR/icons/" 2>/dev/null || true
+
+          echo "✅ 文件已复制到 $BUILD_DIR"
+
+      - name: 打包为 ZIP
+        run: |
+          cd build
+          ZIP_NAME="MyHostex-Assistant-v${{ steps.manifest.outputs.version }}.zip"
+          cd "MyHostex-Assistant-v${{ steps.manifest.outputs.version }}"
+          zip -r "../$ZIP_NAME" ./*
+          cd ../..
+          echo "✅ 打包完成: build/$ZIP_NAME"
+          echo "zip_name=$ZIP_NAME" >> $GITHUB_OUTPUT
+        id: package
+
+      - name: 计算文件校验和
+        run: |
+          cd build
+          sha256sum *.zip > checksums.txt
+          cat checksums.txt
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: MyHostex-Assistant-v${{ steps.manifest.outputs.version }}
+          path: build/
+          if-no-files-found: error
+
+      - name: 创建 Release（仅 tag 推送时）
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/*.zip
+            build/checksums.txt
+          name: MyHostex Assistant ${{ github.ref_name }}
+          body: |
+            ## MyHostex 智能回复助手 ${{ github.ref_name }}
+
+            ### 安装方式
+            1. 下载 `MyHostex-Assistant-v${{ steps.manifest.outputs.version }}.zip`
+            2. 解压到本地文件夹
+            3. 打开 Chrome → 扩展程序 → 开启"开发者模式"
+            4. 点击"加载已解压的扩展程序" → 选择解压后的文件夹
+
+            ### 校验
+            ```
+            $(cat build/checksums.txt)
+            ```
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 构建摘要
+        run: |
+          echo "## 📦 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| 项目 | 值 |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|-----|" >> $GITHUB_STEP_SUMMARY
+          echo "| 扩展名称 | ${{ steps.manifest.outputs.name }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 版本 | ${{ steps.manifest.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| 构建号 | ${{ github.run_number }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| ZIP 包 | \`${{ steps.package.outputs.zip_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "👉 构建产物可在 Actions 页面下载" >> $GITHUB_STEP_SUMMARY
