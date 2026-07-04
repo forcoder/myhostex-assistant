@@ -167,27 +167,27 @@ test('getDefaultModel 未知 provider 回退', () => {
 
 test('API 路径拼接：login', () => {
   const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-  return ep + APP_CONFIG.AUTH.LOGIN === 'https://api.agentai0.com/auth/login';
+  return ep + APP_CONFIG.AUTH.LOGIN === 'http://api.agentai0.com/auth/login';
 });
 
 test('API 路径拼接：register', () => {
   const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-  return ep + APP_CONFIG.AUTH.REGISTER === 'https://api.agentai0.com/auth/register';
+  return ep + APP_CONFIG.AUTH.REGISTER === 'http://api.agentai0.com/auth/register';
 });
 
 test('API 路径拼接：refresh', () => {
   const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-  return ep + APP_CONFIG.AUTH.REFRESH === 'https://api.agentai0.com/auth/refresh';
+  return ep + APP_CONFIG.AUTH.REFRESH === 'http://api.agentai0.com/auth/refresh';
 });
 
 test('API 路径拼接：push', () => {
   const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-  return ep + APP_CONFIG.SYNC.PUSH === 'https://api.agentai0.com/sync/push';
+  return ep + APP_CONFIG.SYNC.PUSH === 'http://api.agentai0.com/sync/push';
 });
 
 test('API 路径拼接：health', () => {
   const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-  return ep + APP_CONFIG.SYNC.HEALTH === 'https://api.agentai0.com/health';
+  return ep + APP_CONFIG.SYNC.HEALTH === 'http://api.agentai0.com/health';
 });
 
 test('BG fallback 路径拼接', () => {

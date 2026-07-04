@@ -15,7 +15,7 @@ const APP_CONFIG = {
 
   // ── 云端同步服务端点 ──────────────────────────
   /** 主端点（popup 同步界面默认值） */
-  CLOUD_ENDPOINT: "https://api.agentai0.com",
+  CLOUD_ENDPOINT: "http://api.agentai0.com",
   /** 备用端点（background 自动同步用，兼容旧部署） */
   CLOUD_ENDPOINT_FALLBACK: "https://csbaby-api2.onrender.com",
 
@@ -54,8 +54,9 @@ const APP_CONFIG = {
     "*://*/*",
     "https://*.supabase.com/*",
     "https://api.agentai0.com/*",
+    "http://api.agentai0.com/*",
   ],
 
   // ── CSP connect-src（供参考） ─────────────────
-  CSP_CONNECT_SRC: "https://api.agentai0.com http://localhost:*",
+  CSP_CONNECT_SRC: "http://api.agentai0.com http://localhost:*",
 };
