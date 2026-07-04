@@ -508,7 +508,7 @@ async function handleSyncLogin(endpoint, apiKey) {
  */
 async function testCloudConnection(endpoint, apiKey) {
   try {
-    const url = `${endpoint.replace(/\/$/, "")}/health`;
+    const url = `${endpoint.replace(/\/$/, "")}${APP_CONFIG.SYNC.HEALTH}`;
     const resp = await fetchWithTimeout(url, {
       method: "GET",
       headers: {
@@ -709,7 +709,7 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
       return { success: false, message: err.message || `上传失败: ${resp.status}` };
     }
   } catch (err) {
-    const classified = classifyFetchError(err, endpoint + "/sync/push");
+    const classified = classifyFetchError(err, endpoint + APP_CONFIG.SYNC.PUSH);
     return { success: false, message: `同步失败: ${classified.message}` };
   }
 }

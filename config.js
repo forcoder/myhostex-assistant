@@ -29,6 +29,7 @@ const APP_CONFIG = {
   // ── 同步 API 路径 ─────────────────────────────
   SYNC: {
     PUSH: "/sync/push",
+    HEALTH: "/health",
   },
 
   // ── AI Provider 默认配置 ──────────────────────

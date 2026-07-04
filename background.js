@@ -859,12 +859,7 @@ async function markQuotaExceeded(quotaConfig) {
 }
 
 function getDefaultModel(p) {
-  return ({
-    openai:   "gpt-4o",
-    deepseek: "deepseek-chat",
-    qwen:     "qwen-plus",
-    zhipu:    "glm-4-flash",
-  })[p] || "gpt-4o";
+  return APP_CONFIG.AI_PROVIDERS[p]?.model || "gpt-4o";
 }
 
 // ══════════════════════════════════════════════

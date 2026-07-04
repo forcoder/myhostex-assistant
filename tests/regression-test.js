@@ -1,8 +1,34 @@
 /**
- * MyHostex 智能回复助手 - 回归测试
- * 模拟浏览器环境验证所有关键功能路径
+ * MyHostex 智能回复助手 - 完整回归测试
+ * ========================================================
+ * 提交前必须运行：node tests/regression-test.js
+ * 全部通过（exit 0）才能提交到 GitHub
+ * ========================================================
  */
 const fs = require('fs');
+const path = require('path');
+
+let passed = 0;
+let failed = 0;
+const failures = [];
+
+function test(name, fn) {
+  try {
+    const ok = fn();
+    if (ok) {
+      console.log(`  ✅ ${name}`);
+      passed++;
+    } else {
+      console.log(`  ❌ ${name} — 断言失败`);
+      failed++;
+      failures.push(name);
+    }
+  } catch (e) {
+    console.log(`  ❌ ${name} — ${e.message}`);
+    failed++;
+    failures.push(name);
+  }
+}
 
 // 模拟浏览器全局对象
 global.chrome = {
@@ -19,10 +45,7 @@ global.document = {
 };
 
 // ── 加载 config.js ──────────────────────────────
-// 使用 Indirect eval 在全局作用域执行，确保 APP_CONFIG 可访问
-const vm = require('vm');
 const configCode = fs.readFileSync('./config.js', 'utf8');
-// 将 const 声明改为 globalThis 赋值以便后续访问
 const wrappedCode = configCode.replace(
   'const APP_CONFIG',
   'globalThis.__APP_CONFIG__'
@@ -31,119 +54,494 @@ const wrappedCode = configCode.replace(
 const APP_CONFIG = globalThis.__APP_CONFIG__;
 delete globalThis.__APP_CONFIG__;
 
-// ═══════════════════════════════════════════════
-// 测试 1: config.js 加载
-// ═══════════════════════════════════════════════
-console.log('=== 测试 1: config.js 加载 ===');
-console.log('   type:', typeof APP_CONFIG);
-console.log('   CLOUD_ENDPOINT:', APP_CONFIG.CLOUD_ENDPOINT);
-console.log('   CLOUD_ENDPOINT_FALLBACK:', APP_CONFIG.CLOUD_ENDPOINT_FALLBACK);
-console.log('   AI_PROVIDERS keys:', Object.keys(APP_CONFIG.AI_PROVIDERS).join(', '));
-let t1 = typeof APP_CONFIG === 'object' && APP_CONFIG.CLOUD_ENDPOINT === 'https://api.agentai0.com';
-console.log('   =>', t1 ? '✅ PASS' : '❌ FAIL');
-if (!t1) process.exit(1);
+// ═══════════════════════════════════════════════════
+console.log('\n═══════════════════════════════════════');
+console.log('   MyHostex 回归测试');
+console.log('═══════════════════════════════════════\n');
 
-// ═══════════════════════════════════════════════
-// 测试 2: PROVIDER_DEFAULTS 展开
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 2: PROVIDER_DEFAULTS 展开 ===');
-const PROVIDER_DEFAULTS = { ...APP_CONFIG.AI_PROVIDERS };
-console.log('   openai:', PROVIDER_DEFAULTS.openai.baseUrl);
-console.log('   deepseek:', PROVIDER_DEFAULTS.deepseek.baseUrl);
-console.log('   qwen:', PROVIDER_DEFAULTS.qwen.baseUrl);
-console.log('   zhipu:', PROVIDER_DEFAULTS.zhipu.baseUrl);
-console.log('   custom:', JSON.stringify(PROVIDER_DEFAULTS.custom));
-let t2 = PROVIDER_DEFAULTS.openai.baseUrl === 'https://api.openai.com/v1'
-      && PROVIDER_DEFAULTS.deepseek.baseUrl === 'https://api.deepseek.com/v1'
-      && PROVIDER_DEFAULTS.qwen.baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-      && PROVIDER_DEFAULTS.zhipu.baseUrl === 'https://open.bigmodel.cn/api/paas/v4'
-      && PROVIDER_DEFAULTS.custom.model === '';
-console.log('   =>', t2 ? '✅ PASS' : '❌ FAIL');
+// ═══════════════════════════════════════════════════
+// 第一部分：配置完整性
+// ═══════════════════════════════════════════════════
+console.log('── 第一部分：配置完整性 ──');
 
-// ═══════════════════════════════════════════════
-// 测试 3: getDefaultBaseUrl
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 3: getDefaultBaseUrl ===');
-function getDefaultBaseUrl(p) {
-  return APP_CONFIG.AI_PROVIDERS[p]?.baseUrl || APP_CONFIG.AI_PROVIDERS.openai.baseUrl;
+test('config.js 加载为对象', () => typeof APP_CONFIG === 'object');
+
+test('CLOUD_ENDPOINT 非空', () => {
+  return typeof APP_CONFIG.CLOUD_ENDPOINT === 'string'
+    && APP_CONFIG.CLOUD_ENDPOINT.startsWith('http');
+});
+
+test('CLOUD_ENDPOINT_FALLBACK 非空', () => {
+  return typeof APP_CONFIG.CLOUD_ENDPOINT_FALLBACK === 'string'
+    && APP_CONFIG.CLOUD_ENDPOINT_FALLBACK.startsWith('http');
+});
+
+test('MYHOSTEX_DOMAIN 非空', () => {
+  return typeof APP_CONFIG.MYHOSTEX_DOMAIN === 'string'
+    && APP_CONFIG.MYHOSTEX_DOMAIN.length > 0;
+});
+
+test('AI_PROVIDERS 包含所有 5 个 provider', () => {
+  const keys = Object.keys(APP_CONFIG.AI_PROVIDERS);
+  return keys.length === 5
+    && keys.includes('openai')
+    && keys.includes('deepseek')
+    && keys.includes('qwen')
+    && keys.includes('zhipu')
+    && keys.includes('custom');
+});
+
+test('AI_PROVIDERS 每个 provider 有 baseUrl 和 model', () => {
+  for (const [k, v] of Object.entries(APP_CONFIG.AI_PROVIDERS)) {
+    if (k === 'custom') continue; // custom 允许空
+    if (!v.baseUrl || !v.baseUrl.startsWith('http')) return false;
+    if (!v.model) return false;
+  }
+  return true;
+});
+
+test('AUTH 包含 LOGIN/REGISTER/REFRESH', () => {
+  return APP_CONFIG.AUTH.LOGIN === '/auth/login'
+    && APP_CONFIG.AUTH.REGISTER === '/auth/register'
+    && APP_CONFIG.AUTH.REFRESH === '/auth/refresh';
+});
+
+test('SYNC 包含 PUSH/HEALTH', () => {
+  return APP_CONFIG.SYNC.PUSH === '/sync/push'
+    && APP_CONFIG.SYNC.HEALTH === '/health';
+});
+
+test('QWEN_DEFAULT_PROVIDER 为 qwen', () => {
+  return APP_CONFIG.QWEN_DEFAULT_PROVIDER === 'qwen';
+});
+
+test('HOST_PERMISSIONS 数组非空', () => {
+  return Array.isArray(APP_CONFIG.HOST_PERMISSIONS)
+    && APP_CONFIG.HOST_PERMISSIONS.length > 0;
+});
+
+test('CSP_CONNECT_SRC 非空', () => {
+  return typeof APP_CONFIG.CSP_CONNECT_SRC === 'string'
+    && APP_CONFIG.CSP_CONNECT_SRC.length > 0;
+});
+
+// ═══════════════════════════════════════════════════
+// 第二部分：运行时函数逻辑
+// ═══════════════════════════════════════════════════
+console.log('\n── 第二部分：运行时函数逻辑 ──');
+
+test('PROVIDER_DEFAULTS 展开正确', () => {
+  const pd = { ...APP_CONFIG.AI_PROVIDERS };
+  return pd.openai.baseUrl === 'https://api.openai.com/v1'
+    && pd.deepseek.baseUrl === 'https://api.deepseek.com/v1'
+    && pd.qwen.baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    && pd.zhipu.baseUrl === 'https://open.bigmodel.cn/api/paas/v4'
+    && pd.custom.model === '';
+});
+
+test('PROVIDER_DEFAULTS 修改不影响原配置（深拷贝隔离）', () => {
+  const pd = { ...APP_CONFIG.AI_PROVIDERS };
+  pd.openai = { baseUrl: 'http://evil.com', model: 'evil' };
+  return APP_CONFIG.AI_PROVIDERS.openai.baseUrl === 'https://api.openai.com/v1';
+});
+
+test('getDefaultBaseUrl 已知 provider', () => {
+  function fn(p) { return APP_CONFIG.AI_PROVIDERS[p]?.baseUrl || APP_CONFIG.AI_PROVIDERS.openai.baseUrl; }
+  return fn('qwen') === 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+});
+
+test('getDefaultBaseUrl 未知 provider 回退到 openai', () => {
+  function fn(p) { return APP_CONFIG.AI_PROVIDERS[p]?.baseUrl || APP_CONFIG.AI_PROVIDERS.openai.baseUrl; }
+  return fn('nonexistent') === 'https://api.openai.com/v1';
+});
+
+test('getDefaultModel 已知 provider', () => {
+  function fn(p) { return APP_CONFIG.AI_PROVIDERS[p]?.model || 'gpt-4o'; }
+  return fn('deepseek') === 'deepseek-chat';
+});
+
+test('getDefaultModel 未知 provider 回退', () => {
+  function fn(p) { return APP_CONFIG.AI_PROVIDERS[p]?.model || 'gpt-4o'; }
+  return fn('nonexistent') === 'gpt-4o';
+});
+
+test('API 路径拼接：login', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
+  return ep + APP_CONFIG.AUTH.LOGIN === 'https://api.agentai0.com/auth/login';
+});
+
+test('API 路径拼接：register', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
+  return ep + APP_CONFIG.AUTH.REGISTER === 'https://api.agentai0.com/auth/register';
+});
+
+test('API 路径拼接：refresh', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
+  return ep + APP_CONFIG.AUTH.REFRESH === 'https://api.agentai0.com/auth/refresh';
+});
+
+test('API 路径拼接：push', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
+  return ep + APP_CONFIG.SYNC.PUSH === 'https://api.agentai0.com/sync/push';
+});
+
+test('API 路径拼接：health', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
+  return ep + APP_CONFIG.SYNC.HEALTH === 'https://api.agentai0.com/health';
+});
+
+test('BG fallback 路径拼接', () => {
+  const ep = APP_CONFIG.CLOUD_ENDPOINT_FALLBACK;
+  return ep.replace(/\/$/, '') + APP_CONFIG.SYNC.PUSH === 'https://csbaby-api2.onrender.com/sync/push';
+});
+
+test('Qwen 导入配置使用 APP_CONFIG', () => {
+  const m = [{ name: 'Qwen-Test', model: 'qwen-plus' }];
+  const configs = m.map((item, idx) => ({
+    id: Date.now().toString() + '_' + idx,
+    name: item.name,
+    provider: APP_CONFIG.QWEN_DEFAULT_PROVIDER,
+    baseUrl: APP_CONFIG.AI_PROVIDERS.qwen.baseUrl,
+    apiKey: 'sk-test',
+    model: item.model,
+    isDefault: idx === 0,
+  }));
+  return configs[0].provider === 'qwen'
+    && configs[0].baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+});
+
+// ═══════════════════════════════════════════════════
+// 第三部分：源文件硬编码检查
+// ═══════════════════════════════════════════════════
+console.log('\n── 第三部分：源文件硬编码检查 ──');
+
+test('background.js 无遗留硬编码 AI URL', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  // 允许 importScripts 中的 config.js 路径
+  // 不允许出现内联的 api provider URL
+  const lines = code.split('\n');
+  for (const line of lines) {
+    if (line.includes('api.openai.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('api.deepseek.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('dashscope.aliyuncs.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('open.bigmodel.cn') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('csbaby-api2') && !line.includes('APP_CONFIG')) return false;
+  }
+  return true;
+});
+
+test('background.js 引用 APP_CONFIG', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  return code.includes("importScripts('config.js')")
+    && code.includes('APP_CONFIG.AI_PROVIDERS')
+    && code.includes('APP_CONFIG.CLOUD_ENDPOINT_FALLBACK')
+    && code.includes('APP_CONFIG.SYNC.PUSH');
+});
+
+test('background.js getDefaultBaseUrl/getDefaultModel 引用配置', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  // getDefaultBaseUrl
+  const hasGetDefaultBaseUrl = code.includes('APP_CONFIG.AI_PROVIDERS[p]?.baseUrl');
+  // getDefaultModel
+  const hasGetDefaultModel = code.includes('APP_CONFIG.AI_PROVIDERS[p]?.model');
+  return hasGetDefaultBaseUrl && hasGetDefaultModel;
+});
+
+test('popup-sync.js 无遗留硬编码 agentai0 URL', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  const lines = code.split('\n');
+  for (const line of lines) {
+    if (line.includes('agentai0.com') && !line.includes('APP_CONFIG')) return false;
+    if ((line.includes('/auth/login') || line.includes('/auth/register')
+      || line.includes('/auth/refresh') || line.includes('/sync/push'))
+      && !line.includes('APP_CONFIG')) return false;
+  }
+  return true;
+});
+
+test('popup-sync.js 引用 APP_CONFIG', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('APP_CONFIG.CLOUD_ENDPOINT')
+    && code.includes('APP_CONFIG.AUTH.LOGIN')
+    && code.includes('APP_CONFIG.AUTH.REGISTER')
+    && code.includes('APP_CONFIG.AUTH.REFRESH')
+    && code.includes('APP_CONFIG.SYNC.PUSH')
+    && code.includes('APP_CONFIG.SYNC.HEALTH');
+});
+
+test('popup.js 无遗留硬编码 AI URL', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  const lines = code.split('\n');
+  for (const line of lines) {
+    if (line.includes('api.openai.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('api.deepseek.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('dashscope.aliyuncs.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('open.bigmodel.cn') && !line.includes('APP_CONFIG')) return false;
+  }
+  return true;
+});
+
+test('popup.js PROVIDER_DEFAULTS 引用 APP_CONFIG', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('APP_CONFIG.AI_PROVIDERS');
+});
+
+test('popup.js Qwen 导入引用 APP_CONFIG', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('APP_CONFIG.QWEN_DEFAULT_PROVIDER')
+    && code.includes('APP_CONFIG.AI_PROVIDERS.qwen.baseUrl');
+});
+
+test('popup_ai_config.js PROVIDER_DEFAULTS 引用 APP_CONFIG', () => {
+  const code = fs.readFileSync('./popup_ai_config.js', 'utf8');
+  return code.includes('APP_CONFIG.AI_PROVIDERS');
+});
+
+test('popup_ai_config.js 无遗留硬编码 AI URL', () => {
+  const code = fs.readFileSync('./popup_ai_config.js', 'utf8');
+  const lines = code.split('\n');
+  for (const line of lines) {
+    if (line.includes('api.openai.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('api.deepseek.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('dashscope.aliyuncs.com') && !line.includes('APP_CONFIG')) return false;
+    if (line.includes('open.bigmodel.cn') && !line.includes('APP_CONFIG')) return false;
+  }
+  return true;
+});
+
+// ═══════════════════════════════════════════════════
+// 第四部分：UI/HTML/JSON 结构检查
+// ═══════════════════════════════════════════════════
+console.log('\n── 第四部分：UI/HTML/JSON 结构检查 ──');
+
+test('popup.html config.js 排在最前', () => {
+  const html = fs.readFileSync('./popup.html', 'utf8');
+  const scripts = html.match(/<script src="([^"]+)">/g) || [];
+  return scripts.length > 0 && scripts[0].includes('config.js');
+});
+
+test('popup.html 版本号为 v3.13.3', () => {
+  const html = fs.readFileSync('./popup.html', 'utf8');
+  return html.includes('v3.13.3');
+});
+
+test('popup.html 没有引入 popup_ai_config.js', () => {
+  const html = fs.readFileSync('./popup.html', 'utf8');
+  return !html.includes('popup_ai_config.js');
+});
+
+test('manifest.json web_accessible_resources 包含 config.js', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  return manifest.web_accessible_resources.some(w =>
+    w.resources.includes('config.js')
+  );
+});
+
+test('manifest.json 版本号为 3.13.3', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  return manifest.version === '3.13.3';
+});
+
+test('manifest.json 版本描述已更新', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  return !manifest.description.includes('v3.13.2');
+});
+
+// ═══════════════════════════════════════════════════
+// 第五部分：关键代码存在性
+// ═══════════════════════════════════════════════════
+console.log('\n── 第五部分：关键代码存在性 ──');
+
+test('popup.js Tab 切换代码存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('querySelectorAll(".tab-btn")')
+    && code.includes('btn.addEventListener("click"')
+    && code.includes('btn.dataset.tab');
+});
+
+test('popup.js showStatus 函数存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('function showStatus');
+});
+
+test('popup.js renderAiConfigs 函数存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('function renderAiConfigs');
+});
+
+test('popup.js 测试 AI 连接函数存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('async function testAiConfig');
+});
+
+test('popup.js 保存 AI 配置函数存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('async function saveAiConfigs');
+});
+
+test('popup.js 加载 AI 配置函数存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('async function loadAiConfigs');
+});
+
+test('popup.js provider 切换事件存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('ai-provider')
+    && code.includes('PROVIDER_DEFAULTS');
+});
+
+test('popup.js 导入 Qwen 按钮事件存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('btn-import-qwen');
+});
+
+test('popup.js 抓取按钮事件存在', () => {
+  const code = fs.readFileSync('./popup.js', 'utf8');
+  return code.includes('btn-scrape');
+});
+
+test('popup-sync.js login 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async login(email, password)')
+    && code.includes('APP_CONFIG.AUTH.LOGIN');
+});
+
+test('popup-sync.js register 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async register(email, password, displayName)')
+    && code.includes('APP_CONFIG.AUTH.REGISTER');
+});
+
+test('popup-sync.js refreshTokenIfNeeded 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async refreshTokenIfNeeded')
+    && code.includes('APP_CONFIG.AUTH.REFRESH');
+});
+
+test('popup-sync.js uploadToCloudWithAuth 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async function uploadToCloudWithAuth')
+    && code.includes('APP_CONFIG.CLOUD_ENDPOINT')
+    && code.includes('APP_CONFIG.SYNC.PUSH');
+});
+
+test('popup-sync.js initSyncUI 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async function initSyncUI');
+});
+
+test('popup-sync.js handleSyncNow 函数存在', () => {
+  const code = fs.readFileSync('./popup-sync.js', 'utf8');
+  return code.includes('async function handleSyncNow');
+});
+
+test('background.js performAutoSyncBG 引用配置', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  return code.includes('async function performAutoSyncBG')
+    && code.includes('APP_CONFIG.CLOUD_ENDPOINT_FALLBACK')
+    && code.includes('APP_CONFIG.SYNC.PUSH');
+});
+
+test('background.js enrichWithAI 使用 getDefaultBaseUrl', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  return code.includes('enrichWithAI')
+    && code.includes('getDefaultBaseUrl');
+});
+
+test('background.js handleGenerateSuggestions 存在', () => {
+  const code = fs.readFileSync('./background.js', 'utf8');
+  return code.includes('async function handleGenerateSuggestions');
+});
+
+test('content.js 未被此项目修改（仅注释含域名）', () => {
+  const code = fs.readFileSync('./content.js', 'utf8');
+  // content.js 不应该有 agentai0, csbaby 等域名
+  return !code.includes('agentai0')
+    && !code.includes('csbaby')
+    && !code.includes('dashscope');
+});
+
+// ═══════════════════════════════════════════════════
+// 第六部分：构建产物验证
+// ═══════════════════════════════════════════════════
+console.log('\n── 第六部分：构建产物验证 ──');
+
+test('build 目录存在', () => {
+  return fs.existsSync('./build');
+});
+
+// 查找最新构建的 ZIP
+const buildFiles = fs.readdirSync('./build').filter(f => f.endsWith('.zip'));
+test('至少有一个构建 ZIP', () => {
+  return buildFiles.length > 0;
+});
+
+if (buildFiles.length > 0) {
+  // 取最新的 ZIP
+  const latestZip = buildFiles.sort().reverse()[0];
+  const zipPath = path.join('./build', latestZip);
+
+  test(`ZIP "${latestZip}" 包含 config.js`, () => {
+    const { execSync } = require('child_process');
+    const listing = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' });
+    return listing.includes('config.js');
+  });
+
+  test(`ZIP "${latestZip}" 包含 manifest.json`, () => {
+    const { execSync } = require('child_process');
+    const listing = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' });
+    return listing.includes('manifest.json');
+  });
+
+  test(`ZIP "${latestZip}" 包含 background.js`, () => {
+    const { execSync } = require('child_process');
+    const listing = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' });
+    return listing.includes('background.js');
+  });
 }
-console.log('   openai:', getDefaultBaseUrl('openai'));
-console.log('   deepseek:', getDefaultBaseUrl('deepseek'));
-console.log('   qwen:', getDefaultBaseUrl('qwen'));
-console.log('   zhipu:', getDefaultBaseUrl('zhipu'));
-console.log('   unknown:', getDefaultBaseUrl('unknown'), '(应=openai fallback)');
-let t3 = getDefaultBaseUrl('qwen') === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-      && getDefaultBaseUrl('unknown') === 'https://api.openai.com/v1';
-console.log('   =>', t3 ? '✅ PASS' : '❌ FAIL');
 
-// ═══════════════════════════════════════════════
-// 测试 4: popup-sync 路径拼接
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 4: 云端 API 路径拼接 ===');
-const endpoint = APP_CONFIG.CLOUD_ENDPOINT.replace(/\/+$/, '');
-console.log('   login:', endpoint + APP_CONFIG.AUTH.LOGIN);
-console.log('   register:', endpoint + APP_CONFIG.AUTH.REGISTER);
-console.log('   refresh:', endpoint + APP_CONFIG.AUTH.REFRESH);
-console.log('   push:', endpoint + APP_CONFIG.SYNC.PUSH);
-let t4 = (endpoint + APP_CONFIG.AUTH.LOGIN)    === 'https://api.agentai0.com/auth/login'
-      && (endpoint + APP_CONFIG.AUTH.REGISTER)  === 'https://api.agentai0.com/auth/register'
-      && (endpoint + APP_CONFIG.AUTH.REFRESH)   === 'https://api.agentai0.com/auth/refresh'
-      && (endpoint + APP_CONFIG.SYNC.PUSH)      === 'https://api.agentai0.com/sync/push';
-console.log('   =>', t4 ? '✅ PASS' : '❌ FAIL');
+// ═══════════════════════════════════════════════════
+// 第七部分：所有 JS 文件语法检查
+// ═══════════════════════════════════════════════════
+console.log('\n── 第七部分：JS 语法检查 ──');
 
-// ═══════════════════════════════════════════════
-// 测试 5: BG fallback 路径
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 5: Background fallback 路径 ===');
-const ep2 = APP_CONFIG.CLOUD_ENDPOINT_FALLBACK;
-const bgPush = ep2.replace(/\/$/, '') + APP_CONFIG.SYNC.PUSH;
-console.log('   bg push:', bgPush);
-let t5 = bgPush === 'https://csbaby-api2.onrender.com/sync/push';
-console.log('   =>', t5 ? '✅ PASS' : '❌ FAIL');
+const jsFilesToCheck = [
+  'config.js', 'background.js', 'popup.js',
+  'popup_ai_config.js', 'popup-sync.js',
+  'sync-service.js', 'content.js', 'injected.js',
+];
 
-// ═══════════════════════════════════════════════
-// 测试 6: Qwen 导入配置
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 6: Qwen 导入配置 ===');
-const qwenModels = [{ name: 'Qwen-Plus-Test', model: 'qwen-plus' }];
-const newConfigs = qwenModels.map((m, idx) => ({
-  id: Date.now().toString() + '_' + idx,
-  name: m.name,
-  provider: APP_CONFIG.QWEN_DEFAULT_PROVIDER,
-  baseUrl: APP_CONFIG.AI_PROVIDERS.qwen.baseUrl,
-  apiKey: 'sk-test',
-  model: m.model,
-  isDefault: idx === 0,
-}));
-console.log('   provider:', newConfigs[0].provider);
-console.log('   baseUrl:', newConfigs[0].baseUrl);
-let t6 = newConfigs[0].provider === 'qwen'
-      && newConfigs[0].baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1';
-console.log('   =>', t6 ? '✅ PASS' : '❌ FAIL');
+for (const file of jsFilesToCheck) {
+  if (!fs.existsSync(file)) continue;
+  test(`${file} 语法正确`, () => {
+    // background.js 需要特殊处理：importScripts 只在 worker 上下文有效
+    let code = fs.readFileSync(file, 'utf8');
+    if (file === 'background.js') {
+      code = code.replace(/try\s*\{[^}]*importScripts[^}]*\}\s*catch\s*\([^)]*\)\s*\{[^}]*\}/g, '');
+      code = code.replace(/APP_CONFIG\.AI_PROVIDERS\[p\]\?\.baseUrl/g, 'undefined');
+      code = code.replace(/APP_CONFIG\.AI_PROVIDERS\[p\]\?\.model/g, 'undefined');
+      code = code.replace(/APP_CONFIG\.\w+(?:\.\w+)*/g, 'undefined');
+    }
+    new Function(code);
+    return true;
+  });
+}
 
-// ═══════════════════════════════════════════════
-// 测试 7: Tab 切换代码存在且语法正确
-// ═══════════════════════════════════════════════
-console.log('\n=== 测试 7: Tab 切换代码完整性 ===');
-const popupCode = fs.readFileSync('./popup.js', 'utf8');
-// 验证 tab 切换代码段存在（不 eval，纯文本检查避免上下文问题）
-const tabCodeExists = popupCode.includes('querySelectorAll(".tab-btn")')
-  && popupCode.includes('btn.addEventListener("click"')
-  && popupCode.includes('btn.dataset.tab');
-console.log('   tab 切换代码存在:', tabCodeExists);
-let t7 = tabCodeExists;
-console.log('   =>', t7 ? '✅ PASS' : '❌ FAIL');
-
-// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════════
 // 汇总
-// ═══════════════════════════════════════════════
-const results = [t1, t2, t3, t4, t5, t6, t7];
-const ok = results.every(Boolean);
-console.log('\n' + '='.repeat(50));
-console.log(ok ? '✅ 回归测试全部通过 (' + results.length + '/' + results.length + ')' : '❌ 回归测试 ' + results.filter(Boolean).length + '/' + results.length + ' 通过');
-if (!ok) {
-  results.forEach((r, i) => { if (!r) console.log('  测试 ' + (i + 1) + ' 失败'); });
+// ═══════════════════════════════════════════════════
+const total = passed + failed;
+console.log('\n═══════════════════════════════════════');
+console.log(`   结果：${passed}/${total} 通过`);
+if (failed > 0) {
+  console.log(`   ❌ 失败 (${failed}):`);
+  for (const f of failures) {
+    console.log(`     - ${f}`);
+  }
+  console.log('\n   ⚠️  修复后重新运行 node tests/regression-test.js');
+  process.exit(1);
+} else {
+  console.log('   ✅ 全部通过，可以提交！');
+  console.log('═══════════════════════════════════════');
+  process.exit(0);
 }
-console.log('='.repeat(50));
-
-process.exit(ok ? 0 : 1);
