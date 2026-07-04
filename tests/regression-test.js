@@ -206,8 +206,14 @@ test('Qwen 导入配置使用 APP_CONFIG', () => {
     model: item.model,
     isDefault: idx === 0,
   }));
-  return configs[0].provider === 'qwen'
-    && configs[0].baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1';
+  // 验证所有必要字段
+  return typeof configs[0].id === 'string'
+    && configs[0].name === 'Qwen-Test'
+    && configs[0].provider === 'qwen'
+    && configs[0].baseUrl === 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+    && configs[0].apiKey === 'sk-test'
+    && configs[0].model === 'qwen-plus'
+    && configs[0].isDefault === true;
 });
 
 // ═══════════════════════════════════════════════════
@@ -347,6 +353,23 @@ test('manifest.json 版本描述已更新', () => {
   return !manifest.description.includes('v3.13.2');
 });
 
+test('manifest.json CSP 包含 CLOUD_ENDPOINT 域名', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  const csp = manifest.content_security_policy?.extension_pages || '';
+  const domain = APP_CONFIG.CLOUD_ENDPOINT.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  return csp.includes(domain);
+});
+
+test('manifest.json host_permissions 数量与 HOST_PERMISSIONS 一致', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  const manifestHosts = manifest.host_permissions || [];
+  const configHosts = APP_CONFIG.HOST_PERMISSIONS || [];
+  // *://*/* 在两边都应该存在
+  return manifestHosts.includes('*://*/*')
+    && configHosts.includes('*://*/*')
+    && manifestHosts.length >= configHosts.length - 1;
+});
+
 // ═══════════════════════════════════════════════════
 // 第五部分：关键代码存在性
 // ═══════════════════════════════════════════════════
@@ -384,20 +407,36 @@ test('popup.js 加载 AI 配置函数存在', () => {
   return code.includes('async function loadAiConfigs');
 });
 
-test('popup.js provider 切换事件存在', () => {
+test('popup.js provider 切换事件绑定存在', () => {
   const code = fs.readFileSync('./popup.js', 'utf8');
-  return code.includes('ai-provider')
-    && code.includes('PROVIDER_DEFAULTS');
+  // 必须有 addEventListener + provider change + PROVIDER_DEFAULTS 引用
+  return code.includes('getElementById("ai-provider")')
+    && code.includes('.addEventListener("change"')
+    && code.includes('PROVIDER_DEFAULTS[val]');
 });
 
-test('popup.js 导入 Qwen 按钮事件存在', () => {
+test('popup.js 导入 Qwen 按钮事件绑定存在', () => {
   const code = fs.readFileSync('./popup.js', 'utf8');
-  return code.includes('btn-import-qwen');
+  return code.includes('getElementById("btn-import-qwen")')
+    && code.includes('addEventListener');
 });
 
-test('popup.js 抓取按钮事件存在', () => {
+test('popup.js 抓取按钮事件绑定存在', () => {
   const code = fs.readFileSync('./popup.js', 'utf8');
-  return code.includes('btn-scrape');
+  return code.includes('getElementById("btn-scrape")')
+    && code.includes('addEventListener');
+});
+
+test('popup_ai_config.js 关键函数 renderAiConfigs 存在', () => {
+  const code = fs.readFileSync('./popup_ai_config.js', 'utf8');
+  return code.includes('function renderAiConfigs')
+    && code.includes('function openAiConfigModal');
+});
+
+test('popup_ai_config.js 关键函数 saveAiConfigs/loadAiConfigs 存在', () => {
+  const code = fs.readFileSync('./popup_ai_config.js', 'utf8');
+  return code.includes('async function saveAiConfigs')
+    && code.includes('async function loadAiConfigs');
 });
 
 test('popup-sync.js login 函数存在', () => {
@@ -461,6 +500,16 @@ test('content.js 未被此项目修改（仅注释含域名）', () => {
     && !code.includes('dashscope');
 });
 
+test('版本号在关键文件中一致为 3.13.3', () => {
+  const manifest = JSON.parse(fs.readFileSync('./manifest.json', 'utf8'));
+  const html = fs.readFileSync('./popup.html', 'utf8');
+  const bg = fs.readFileSync('./background.js', 'utf8');
+  const version = manifest.version;
+  return version === '3.13.3'
+    && html.includes('v' + version)
+    && bg.includes('版本: ' + version);
+});
+
 // ═══════════════════════════════════════════════════
 // 第六部分：构建产物验证
 // ═══════════════════════════════════════════════════
@@ -498,6 +547,21 @@ if (buildFiles.length > 0) {
     const listing = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' });
     return listing.includes('background.js');
   });
+
+  // 构建完整性：所有必需文件都在 ZIP 中
+  const requiredFiles = [
+    'manifest.json', 'background.js', 'content.js', 'injected.js',
+    'popup.html', 'popup.js', 'popup-sync.js', 'sync-service.js',
+    'config.js', 'popup_ai_config.js', 'styles/panel.css',
+    'icons/icon16.png', 'icons/icon48.png', 'icons/icon128.png',
+  ];
+  for (const reqFile of requiredFiles) {
+    test(`ZIP 包含必需文件: ${reqFile}`, () => {
+      const { execSync } = require('child_process');
+      const listing = execSync(`unzip -l "${zipPath}"`, { encoding: 'utf8' });
+      return listing.includes(reqFile);
+    });
+  }
 }
 
 // ═══════════════════════════════════════════════════

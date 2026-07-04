@@ -6,7 +6,7 @@
 // 加载全局配置
 try { importScripts('config.js'); } catch (e) { console.warn("[MyHostex助手][BG] 加载 config.js 失败:", e); }
 
-console.log("[MyHostex助手][BG] Service Worker 已启动，版本: 3.13.2");
+console.log("[MyHostex助手][BG] Service Worker 已启动，版本: 3.13.3");
 
 // ── 同步服务内联（Background 专用） ────────────────────────────────
 const SYNC_KEYS_BG = [
