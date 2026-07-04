@@ -17,6 +17,80 @@ const SYNC_CONFIG_KEY = "sync_config";
 // ── 认证状态存储键 ───────────────────────────
 const SYNC_AUTH_KEY = "sync_auth";
 
+// ── 网络请求工具函数 ──────────────────────────
+/**
+ * 带超时的 fetch 包装器
+ * @param {string} url - 请求 URL
+ * @param {object} options - fetch 选项
+ * @param {number} timeoutMs - 超时毫秒数 (默认 15s)
+ * @returns {Promise<Response>}
+ */
+async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+    });
+    return resp;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * 分类 fetch 错误并返回用户友好的中文消息
+ * @param {Error} err - fetch 抛出的错误
+ * @param {string} url - 请求的 URL
+ * @returns {{ type: string, message: string }}
+ */
+function classifyFetchError(err, url) {
+  if (err.name === "AbortError") {
+    return { type: "timeout", message: `连接超时，服务器无响应，请检查云端地址是否正确` };
+  }
+  const msg = (err.message || "").toLowerCase();
+  if (msg.includes("failed to fetch") || msg.includes("networkerror") || msg.includes("network error")) {
+    return { type: "network", message: `无法连接到服务器 ${url}，请检查网络连接和云端地址` };
+  }
+  if (msg.includes("cors") || msg.includes("cross-origin")) {
+    return { type: "cors", message: `CORS 请求被拦截，请在扩展管理页面添加域名权限` };
+  }
+  if (msg.includes("enotfound") || msg.includes("dns") || msg.includes("getaddrinfo")) {
+    return { type: "dns", message: `无法解析服务器域名，请检查云端地址是否正确` };
+  }
+  if (msg.includes("econnrefused") || msg.includes("connection refused")) {
+    return { type: "refused", message: `服务器拒绝连接，请确认服务器是否正在运行` };
+  }
+  if (msg.includes("etimedout") || msg.includes("timeout")) {
+    return { type: "timeout", message: `连接服务器超时，请检查网络或稍后重试` };
+  }
+  return { type: "unknown", message: err.message || "未知网络错误" };
+}
+
+/**
+ * 带重试机制的请求
+ * @param {Function} fn - 需要重试的异步函数
+ * @param {number} maxRetries - 最大重试次数 (默认 1)
+ * @param {number} delayMs - 重试间隔毫秒 (默认 1s)
+ * @returns {Promise<any>}
+ */
+async function withRetry(fn, maxRetries = 1, delayMs = 1000) {
+  let lastError;
+  for (let i = 0; i <= maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < maxRetries) {
+        console.log(`[SyncAuth] 请求失败，${delayMs}ms 后重试 (${i + 1}/${maxRetries}):`, err.message);
+        await new Promise(r => setTimeout(r, delayMs));
+      }
+    }
+  }
+  throw lastError;
+}
+
 // ── SyncAuthManager ─────────────────────────
 class SyncAuthManager {
   constructor() {
@@ -64,17 +138,30 @@ class SyncAuthManager {
 
   async login(email, password) {
     // 使用可配置的云端地址，默认 csBaby
-    const endpoint = syncConfig.cloudEndpoint || "https://csbaby-api2.onrender.com";
-    console.log("[SyncAuth] 登录请求:", endpoint);
+    const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+    const endpoint = baseEndpoint.replace(/\/+$/, "");
+    const url = `${endpoint}/auth/login`;
+    console.log("[SyncAuth] 登录请求:", url);
 
     try {
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-        mode: "cors"
-      });
-      const result = await resp.json();
+      const resp = await withRetry(async () => {
+        return await fetchWithTimeout(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+          mode: "cors",
+        });
+      }, 1, 1500);
+
+      let result;
+      try {
+        result = await resp.json();
+      } catch (parseErr) {
+        // 服务器返回了非 JSON 响应（如 Render 休眠页）
+        console.error("[SyncAuth] 响应解析失败, status:", resp.status, "body 不是 JSON");
+        return { success: false, message: `服务器返回异常 (HTTP ${resp.status})，请确认服务器地址是否正确` };
+      }
+
       console.log("[SyncAuth] 登录响应:", result);
       // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
       if ((result.code === 0 || result.isSuccess) && result.data) {
@@ -88,26 +175,43 @@ class SyncAuthManager {
         await this.saveAuthState(auth);
         return { success: true, message: "登录成功" };
       }
-      return { success: false, message: result.message || "登录失败" };
+      return { success: false, message: result.message || "登录失败，请检查邮箱和密码" };
     } catch (err) {
       console.error("[SyncAuth] 登录失败:", err);
-      return { success: false, message: `网络错误: ${err.message}` };
+      const classified = classifyFetchError(err, url);
+      let message = `网络错误: ${classified.message}`;
+      // 对已知的连接类错误，提示用户检查配置
+      if (classified.type === "network" || classified.type === "timeout" || classified.type === "dns") {
+        message += `\n当前云端地址: ${endpoint}`;
+      }
+      return { success: false, message };
     }
   }
 
   async register(email, password, displayName) {
     // 使用可配置的云端地址，默认 csBaby
-    const endpoint = syncConfig.cloudEndpoint || "https://csbaby-api2.onrender.com";
-    console.log("[SyncAuth] 注册请求:", endpoint);
+    const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+    const endpoint = baseEndpoint.replace(/\/+$/, "");
+    const url = `${endpoint}/auth/register`;
+    console.log("[SyncAuth] 注册请求:", url);
 
     try {
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/register`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName }),
-        mode: "cors"
-      });
-      const result = await resp.json();
+      const resp = await withRetry(async () => {
+        return await fetchWithTimeout(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, displayName }),
+          mode: "cors",
+        });
+      }, 1, 1500);
+
+      let result;
+      try {
+        result = await resp.json();
+      } catch (parseErr) {
+        return { success: false, message: `服务器返回异常 (HTTP ${resp.status})，请确认服务器地址是否正确` };
+      }
+
       console.log("[SyncAuth] 注册响应:", result);
       // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
       if ((result.code === 0 || result.isSuccess) && result.data) {
@@ -124,7 +228,8 @@ class SyncAuthManager {
       return { success: false, message: result.message || "注册失败" };
     } catch (err) {
       console.error("[SyncAuth] 注册失败:", err);
-      return { success: false, message: `网络错误: ${err.message}` };
+      const classified = classifyFetchError(err, url);
+      return { success: false, message: `网络错误: ${classified.message}` };
     }
   }
 
@@ -144,13 +249,22 @@ class SyncAuthManager {
     if (this._auth.expiresAt - Date.now() > fiveMinutes) return false;
 
     try {
-      const endpoint = syncConfig.cloudEndpoint || "https://csbaby-api2.onrender.com";
-      const resp = await fetch(`${endpoint.replace(/\/$/, "")}/auth/refresh`, {
+      const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+      const endpoint = baseEndpoint.replace(/\/+$/, "");
+      const url = `${endpoint}/auth/refresh`;
+      const resp = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: this._auth.refreshToken })
-      });
-      const result = await resp.json();
+        body: JSON.stringify({ refreshToken: this._auth.refreshToken }),
+      }, 10000);
+
+      let result;
+      try {
+        result = await resp.json();
+      } catch {
+        return false;
+      }
+
       if (result.isSuccess && result.data) {
         const auth = {
           userId: result.data.userId,
@@ -395,13 +509,13 @@ async function handleSyncLogin(endpoint, apiKey) {
 async function testCloudConnection(endpoint, apiKey) {
   try {
     const url = `${endpoint.replace(/\/$/, "")}/health`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-    });
+    }, 10000);
 
     if (resp.ok) {
       return { success: true, message: "连接成功" };
@@ -411,7 +525,8 @@ async function testCloudConnection(endpoint, apiKey) {
       return { success: false, message: `服务器错误: ${resp.status}` };
     }
   } catch (err) {
-    return { success: false, message: `网络错误: ${err.message}` };
+    const classified = classifyFetchError(err, url);
+    return { success: false, message: `网络错误: ${classified.message}` };
   }
 }
 
@@ -555,7 +670,7 @@ function escapeHtml(str) {
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
   // 使用可配置的云端地址，默认 csBaby
-  const endpoint = syncConfig.cloudEndpoint || "https://csbaby-api2.onrender.com";
+  const endpoint = (syncConfig.cloudEndpoint || "https://api.agentai0.com").replace(/\/+$/, "");
 
   // 尝试刷新 token（如果即将过期）
   await syncAuthManager.refreshTokenIfNeeded();
@@ -567,8 +682,8 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
   }
 
   try {
-    const url = `${endpoint.replace(/\/$/, "")}/sync/push`;
-    const resp = await fetch(url, {
+    const url = `${endpoint}/sync/push`;
+    const resp = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -580,7 +695,7 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
         deviceId: await getDeviceId(),
         localStats: localStats
       }),
-    });
+    }, 30000);
 
     if (resp.ok) {
       const result = await resp.json();
@@ -594,7 +709,8 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
       return { success: false, message: err.message || `上传失败: ${resp.status}` };
     }
   } catch (err) {
-    return { success: false, message: `网络错误: ${err.message}` };
+    const classified = classifyFetchError(err, endpoint + "/sync/push");
+    return { success: false, message: `同步失败: ${classified.message}` };
   }
 }
 
@@ -612,7 +728,7 @@ async function uploadToCloud(jsonData) {
 
   try {
     const url = `${cloudEndpoint.replace(/\/$/, "")}/sync/upload`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -623,7 +739,7 @@ async function uploadToCloud(jsonData) {
         timestamp: new Date().toISOString(),
         deviceId: await getDeviceId(),
       }),
-    });
+    }, 30000);
 
     if (resp.ok) {
       return { success: true, message: "上传成功" };
@@ -632,7 +748,8 @@ async function uploadToCloud(jsonData) {
       return { success: false, message: err.message || `上传失败: ${resp.status}` };
     }
   } catch (err) {
-    return { success: false, message: `网络错误: ${err.message}` };
+    const classified = classifyFetchError(err, `${cloudEndpoint.replace(/\/$/, "")}/sync/upload`);
+    return { success: false, message: `网络错误: ${classified.message}` };
   }
 }
 
@@ -649,12 +766,12 @@ async function downloadFromCloud() {
 
   try {
     const url = `${cloudEndpoint.replace(/\/$/, "")}/sync/download`;
-    const resp = await fetch(url, {
+    const resp = await fetchWithTimeout(url, {
       method: "GET",
       headers: {
         Authorization: `Bearer ${apiKey}`,
       },
-    });
+    }, 30000);
 
     if (resp.ok) {
       const result = await resp.json();
@@ -664,7 +781,8 @@ async function downloadFromCloud() {
       return { success: false, data: null, message: err.message || `下载失败: ${resp.status}` };
     }
   } catch (err) {
-    return { success: false, data: null, message: `网络错误: ${err.message}` };
+    const classified = classifyFetchError(err, `${cloudEndpoint.replace(/\/$/, "")}/sync/download`);
+    return { success: false, data: null, message: `网络错误: ${classified.message}` };
   }
 }
 

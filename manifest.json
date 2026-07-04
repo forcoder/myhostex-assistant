@@ -19,7 +19,8 @@
     "https://dashscope.aliyuncs.com/*",
     "https://open.bigmodel.cn/*",
     "*://*/*",
-    "https://*.supabase.com/*"
+    "https://*.supabase.com/*",
+    "https://api.agentai0.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -47,6 +48,9 @@
     "16":  "icons/icon16.png",
     "48":  "icons/icon48.png",
     "128": "icons/icon128.png"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self' https://api.agentai0.com http://localhost:*"
   },
   "web_accessible_resources": [
     {
