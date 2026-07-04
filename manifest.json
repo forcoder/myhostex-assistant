@@ -54,7 +54,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/*", "styles/*", "injected.js"],
+      "resources": ["icons/*", "styles/*", "injected.js", "config.js"],
       "matches": ["https://www.myhostex.com/*"]
     }
   ]

@@ -138,9 +138,9 @@ class SyncAuthManager {
 
   async login(email, password) {
     // 使用可配置的云端地址，默认 csBaby
-    const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+    const baseEndpoint = syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT;
     const endpoint = baseEndpoint.replace(/\/+$/, "");
-    const url = `${endpoint}/auth/login`;
+    const url = `${endpoint}${APP_CONFIG.AUTH.LOGIN}`;
     console.log("[SyncAuth] 登录请求:", url);
 
     try {
@@ -190,9 +190,9 @@ class SyncAuthManager {
 
   async register(email, password, displayName) {
     // 使用可配置的云端地址，默认 csBaby
-    const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+    const baseEndpoint = syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT;
     const endpoint = baseEndpoint.replace(/\/+$/, "");
-    const url = `${endpoint}/auth/register`;
+    const url = `${endpoint}${APP_CONFIG.AUTH.REGISTER}`;
     console.log("[SyncAuth] 注册请求:", url);
 
     try {
@@ -249,9 +249,9 @@ class SyncAuthManager {
     if (this._auth.expiresAt - Date.now() > fiveMinutes) return false;
 
     try {
-      const baseEndpoint = syncConfig.cloudEndpoint || "https://api.agentai0.com";
+      const baseEndpoint = syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT;
       const endpoint = baseEndpoint.replace(/\/+$/, "");
-      const url = `${endpoint}/auth/refresh`;
+      const url = `${endpoint}${APP_CONFIG.AUTH.REFRESH}`;
       const resp = await fetchWithTimeout(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -669,8 +669,8 @@ function escapeHtml(str) {
  * 带认证上传到云端
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
-  // 使用可配置的云端地址，默认 csBaby
-  const endpoint = (syncConfig.cloudEndpoint || "https://api.agentai0.com").replace(/\/+$/, "");
+  // 使用可配置的云端地址，默认 APP_CONFIG.CLOUD_ENDPOINT
+  const endpoint = (syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT).replace(/\/+$/, "");
 
   // 尝试刷新 token（如果即将过期）
   await syncAuthManager.refreshTokenIfNeeded();
@@ -682,7 +682,7 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
   }
 
   try {
-    const url = `${endpoint}/sync/push`;
+    const url = `${endpoint}${APP_CONFIG.SYNC.PUSH}`;
     const resp = await fetchWithTimeout(url, {
       method: "POST",
       headers: {

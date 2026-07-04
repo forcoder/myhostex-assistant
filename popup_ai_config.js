@@ -3,13 +3,7 @@
 // ═══════════════════════════════════════════════
 
 // ── Provider 默认配置 ─────────────────────────
-const PROVIDER_DEFAULTS = {
-  openai:   { baseUrl: "https://api.openai.com/v1",           model: "gpt-4o" },
-  deepseek: { baseUrl: "https://api.deepseek.com/v1",         model: "deepseek-chat" },
-  qwen:     { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-  zhipu:    { baseUrl: "https://open.bigmodel.cn/api/paas/v4", model: "glm-4-flash" },
-  custom:   { baseUrl: "", model: "" },
-};
+const PROVIDER_DEFAULTS = { ...APP_CONFIG.AI_PROVIDERS };
 
 let aiConfigs = [];     // 多模型配置数组
 let editingAiIdx = -1;  // 当前编辑的配置索引，-1 表示新增

@@ -1,5 +1,6 @@
 # 构建产物和临时文件
 output/
+build/
 *.zip
 *.pyc
 __pycache__/

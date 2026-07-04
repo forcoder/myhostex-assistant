@@ -89,6 +89,7 @@ jobs:
           cp popup-sync.js "$BUILD_DIR/"
           cp sync-service.js "$BUILD_DIR/"
           cp popup_ai_config.js "$BUILD_DIR/" 2>/dev/null || true
+          cp config.js "$BUILD_DIR/" 2>/dev/null || true
 
           # 样式
           mkdir -p "$BUILD_DIR/styles"

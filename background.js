@@ -3,6 +3,9 @@
  * 负责：初始化存储、代理 LLM API 请求、房源页面自动抓取
  */
 
+// 加载全局配置
+try { importScripts('config.js'); } catch (e) { console.warn("[MyHostex助手][BG] 加载 config.js 失败:", e); }
+
 console.log("[MyHostex助手][BG] Service Worker 已启动，版本: 3.13.2");
 
 // ── 同步服务内联（Background 专用） ────────────────────────────────
@@ -215,11 +218,11 @@ async function performAutoSyncBG(changedKey) {
       return;
     }
 
-    const endpoint = syncConfig.cloudEndpoint || "https://csbaby-api2.onrender.com";
+    const endpoint = syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT_FALLBACK;
     console.log("[MyHostex助手][BG] 执行自动同步, 变更:", changedKey, "端点:", endpoint);
 
     const jsonData = await exportSyncDataBG();
-    const url = `${endpoint.replace(/\/$/, "")}/sync/push`;
+    const url = `${endpoint.replace(/\/$/, "")}${APP_CONFIG.SYNC.PUSH}`;
     const resp = await fetch(url, {
       method: "POST",
       headers: {
@@ -804,12 +807,7 @@ function parseSuggestions(raw, max) {
 }
 
 function getDefaultBaseUrl(p) {
-  return ({
-    openai:   "https://api.openai.com/v1",
-    deepseek: "https://api.deepseek.com/v1",
-    qwen:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    zhipu:    "https://open.bigmodel.cn/api/paas/v4",
-  })[p] || "https://api.openai.com/v1";
+  return APP_CONFIG.AI_PROVIDERS[p]?.baseUrl || APP_CONFIG.AI_PROVIDERS.openai.baseUrl;
 }
 
 // ── 免费额度检测 ───────────────────────────────
