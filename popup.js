@@ -1495,25 +1495,33 @@ function updateSyncAuthUI() {
 
 // 处理登录提交
 async function handleLoginSubmit() {
-  const email = document.getElementById("login-email").value.trim();
+  const account = document.getElementById("login-account").value.trim();
   const password = document.getElementById("login-password").value;
   const errorEl = document.getElementById("login-error");
+  const hintEl = document.getElementById("login-hint");
   const submitBtn = document.getElementById("login-submit");
 
-  if (!email || !password) {
-    errorEl.textContent = "请填写邮箱和密码";
+  errorEl.style.display = "none";
+  hintEl.style.display = "none";
+
+  if (!account || !password) {
+    errorEl.textContent = "请填写账号和密码";
     errorEl.style.display = "block";
     return;
   }
 
+  if (typeof isPhone === "function" && isPhone(account)) {
+    hintEl.textContent = "检测到手机号：当前云端服务仅支持邮箱登录，请改用邮箱账号";
+    hintEl.style.display = "block";
+  }
+
   submitBtn.disabled = true;
   submitBtn.textContent = "登录中...";
-  errorEl.style.display = "none";
 
-  const result = await syncAuthManager.login(email, password);
+  const result = await syncAuthManager.login(account, password);
   if (result.success) {
     document.getElementById("login-modal").classList.remove("open");
-    document.getElementById("login-email").value = "";
+    document.getElementById("login-account").value = "";
     document.getElementById("login-password").value = "";
   } else {
     errorEl.textContent = result.message;
@@ -1527,26 +1535,34 @@ async function handleLoginSubmit() {
 // 处理注册提交
 async function handleRegisterSubmit() {
   const displayName = document.getElementById("register-display-name").value.trim();
-  const email = document.getElementById("register-email").value.trim();
+  const account = document.getElementById("register-account").value.trim();
   const password = document.getElementById("register-password").value;
   const errorEl = document.getElementById("register-error");
+  const hintEl = document.getElementById("register-hint");
   const submitBtn = document.getElementById("register-submit");
 
-  if (!displayName || !email || password.length < 6) {
+  errorEl.style.display = "none";
+  hintEl.style.display = "none";
+
+  if (!displayName || !account || password.length < 6) {
     errorEl.textContent = "请填写完整信息，密码至少6位";
     errorEl.style.display = "block";
     return;
   }
 
+  if (typeof isPhone === "function" && isPhone(account)) {
+    hintEl.textContent = "检测到手机号：当前云端服务仅支持邮箱注册，请改用邮箱账号";
+    hintEl.style.display = "block";
+  }
+
   submitBtn.disabled = true;
   submitBtn.textContent = "注册中...";
-  errorEl.style.display = "none";
 
-  const result = await syncAuthManager.register(email, password, displayName);
+  const result = await syncAuthManager.register(account, password, displayName);
   if (result.success) {
     document.getElementById("register-modal").classList.remove("open");
     document.getElementById("register-display-name").value = "";
-    document.getElementById("register-email").value = "";
+    document.getElementById("register-account").value = "";
     document.getElementById("register-password").value = "";
   } else {
     errorEl.textContent = result.message;

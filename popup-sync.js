@@ -17,6 +17,51 @@ const SYNC_CONFIG_KEY = "sync_config";
 // ── 认证状态存储键 ───────────────────────────
 const SYNC_AUTH_KEY = "sync_auth";
 
+// ── 网络工具与端点单一来源 ─────────────────────
+/**
+ * 识别字符串是否为大陆手机号（11 位、1 开头）
+ * @param {string} s
+ * @returns {boolean}
+ */
+function isPhone(s) {
+  return /^1[3-9]\d{9}$/.test(String(s || "").trim());
+}
+
+/**
+ * 获取当前生效的云端地址
+ * 单一来源：syncConfig.cloudEndpoint（用户存储）→ APP_CONFIG.CLOUD_ENDPOINT（系统配置）
+ * @returns {string}
+ */
+function getCloudEndpoint() {
+  return (syncConfig.cloudEndpoint || APP_CONFIG.CLOUD_ENDPOINT || "").replace(/\/+$/, "");
+}
+
+/**
+ * 对非 2xx HTTP 响应返回友好的中文消息
+ * @param {Response} resp - fetch 响应
+ * @param {string} endpoint - 云端地址
+ * @returns {string}
+ */
+function classifyHttpStatus(resp, endpoint) {
+  const status = resp.status;
+  if (status === 404) {
+    return `云端地址 ${endpoint} 无法访问登录接口 (HTTP 404)。请检查云端地址是否正确，或联系服务管理员确认接口路径`;
+  }
+  if (status === 401 || status === 403) {
+    return "账号或密码错误";
+  }
+  if (status === 400) {
+    return "请求参数有误，请检查输入的账号和密码";
+  }
+  if (status === 429) {
+    return "请求过于频繁，请稍后再试";
+  }
+  if (status >= 500) {
+    return `云端服务暂时不可用 (HTTP ${status})，请稍后重试`;
+  }
+  return `云端返回异常 (HTTP ${status})`;
+}
+
 // ── SyncAuthManager ─────────────────────────
 class SyncAuthManager {
   constructor() {
@@ -62,20 +107,42 @@ class SyncAuthManager {
   removeListener(callback) { this._listeners = this._listeners.filter(l => l !== callback); }
   _notifyListeners() { this._listeners.forEach(cb => cb(this._auth)); }
 
-  async login(email, password) {
-    // 云端同步服务器地址（可配置）
-    const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
-    console.log("[SyncAuth] 登录请求:", SYNC_SERVER_URL);
+  async login(account, password) {
+    const endpoint = getCloudEndpoint();
+    const url = `${endpoint}${APP_CONFIG.AUTH.LOGIN}`;
+    console.log("[SyncAuth] 登录请求:", url, "账号:", isPhone(account) ? "手机号" : "邮箱");
+
+    // 当前云端服务仅支持邮箱 + 密码：手机号提前给出明确提示，避免无效请求
+    if (isPhone(account)) {
+      return {
+        success: false,
+        message: "当前云端服务仅支持邮箱登录，请改用邮箱账号（手机号登录暂未开通）"
+      };
+    }
 
     try {
-      const resp = await fetch(`${SYNC_SERVER_URL}/auth/login`, {
+      const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: account, password }),
         mode: "cors"
       });
-      const result = await resp.json();
+
+      let result;
+      try {
+        result = await resp.json();
+      } catch (parseErr) {
+        console.error("[SyncAuth] 响应解析失败, status:", resp.status);
+        return { success: false, message: classifyHttpStatus(resp, endpoint) };
+      }
+
       console.log("[SyncAuth] 登录响应:", result);
+
+      if (!resp.ok) {
+        const fromServer = result?.message || result?.msg;
+        return { success: false, message: fromServer || classifyHttpStatus(resp, endpoint) };
+      }
+
       // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
       if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
@@ -88,28 +155,48 @@ class SyncAuthManager {
         await this.saveAuthState(auth);
         return { success: true, message: "登录成功" };
       }
-      return { success: false, message: result.message || "登录失败" };
+      return { success: false, message: result.message || "登录失败，请检查账号和密码" };
     } catch (err) {
       console.error("[SyncAuth] 登录失败:", err);
-      return { success: false, message: `网络错误: ${err.message}` };
+      return { success: false, message: `网络错误: ${err.message}\n当前云端地址: ${endpoint}` };
     }
   }
 
-  async register(email, password, displayName) {
-    // 云端同步服务器地址（可配置）
-    const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
-    console.log("[SyncAuth] 注册请求:", SYNC_SERVER_URL);
+  async register(account, password, displayName) {
+    const endpoint = getCloudEndpoint();
+    const url = `${endpoint}${APP_CONFIG.AUTH.REGISTER}`;
+    console.log("[SyncAuth] 注册请求:", url);
+
+    if (isPhone(account)) {
+      return {
+        success: false,
+        message: "当前云端服务仅支持邮箱注册，请改用邮箱账号（手机号注册暂未开通）"
+      };
+    }
 
     try {
-      const resp = await fetch(`${SYNC_SERVER_URL}/auth/register`, {
+      const resp = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, displayName }),
+        body: JSON.stringify({ email: account, password, displayName }),
         mode: "cors"
       });
-      const result = await resp.json();
+
+      let result;
+      try {
+        result = await resp.json();
+      } catch (parseErr) {
+        console.error("[SyncAuth] 注册响应解析失败, status:", resp.status);
+        return { success: false, message: classifyHttpStatus(resp, endpoint) };
+      }
+
       console.log("[SyncAuth] 注册响应:", result);
-      // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
+
+      if (!resp.ok) {
+        const fromServer = result?.message || result?.msg;
+        return { success: false, message: fromServer || classifyHttpStatus(resp, endpoint) };
+      }
+
       if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
           userId: result.data.userId,
@@ -121,10 +208,10 @@ class SyncAuthManager {
         await this.saveAuthState(auth);
         return { success: true, message: "注册成功" };
       }
-      return { success: false, message: result.message || "注册失败" };
+      return { success: false, message: result.message || "注册失败，请检查账号信息" };
     } catch (err) {
       console.error("[SyncAuth] 注册失败:", err);
-      return { success: false, message: `网络错误: ${err.message}` };
+      return { success: false, message: `网络错误: ${err.message}\n当前云端地址: ${endpoint}` };
     }
   }
 
@@ -144,8 +231,8 @@ class SyncAuthManager {
     if (this._auth.expiresAt - Date.now() > fiveMinutes) return false;
 
     try {
-      const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
-      const resp = await fetch(`${SYNC_SERVER_URL}/auth/refresh`, {
+      const endpoint = getCloudEndpoint();
+      const resp = await fetch(`${endpoint}${APP_CONFIG.AUTH.REFRESH}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ refreshToken: this._auth.refreshToken })
@@ -539,7 +626,7 @@ function escapeHtml(str) {
  * 带认证上传到云端
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
-  const SYNC_SERVER_URL = "https://csbaby-sync-server-py.onrender.com";
+  const endpoint = getCloudEndpoint();
 
   // 尝试刷新 token（如果即将过期）
   await syncAuthManager.refreshTokenIfNeeded();
@@ -551,7 +638,7 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
   }
 
   try {
-    const url = `${SYNC_SERVER_URL}/sync/push`;
+    const url = `${endpoint}${APP_CONFIG.SYNC.PUSH}`;
     const resp = await fetch(url, {
       method: "POST",
       headers: {

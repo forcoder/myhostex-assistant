@@ -1064,6 +1064,7 @@
   </div>
 </div>
 
+<script src="config.js"></script>
 <script src="sync-service.js"></script>
 <script src="popup-sync.js"></script>
 <script src="popup.js"></script>
@@ -1073,14 +1074,15 @@
   <div class="modal" style="width:320px">
     <h3>🔑 登录</h3>
     <div class="form-group">
-      <label>邮箱</label>
-      <input type="email" id="login-email" placeholder="your@email.com" />
+      <label>邮箱 / 手机号</label>
+      <input type="text" id="login-account" placeholder="your@email.com 或 13800138000" autocomplete="username" />
     </div>
     <div class="form-group">
       <label>密码</label>
-      <input type="password" id="login-password" placeholder="••••••••" />
+      <input type="password" id="login-password" placeholder="••••••••" autocomplete="current-password" />
     </div>
     <div id="login-error" style="color:#dc2626;font-size:12px;display:none;margin-bottom:8px"></div>
+    <div id="login-hint" style="color:#6b7280;font-size:11px;display:none;margin-bottom:8px"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="login-cancel">取消</button>
       <button class="btn btn-primary" id="login-submit">登录</button>
@@ -1097,14 +1099,15 @@
       <input type="text" id="register-display-name" placeholder="你的昵称" />
     </div>
     <div class="form-group">
-      <label>邮箱</label>
-      <input type="email" id="register-email" placeholder="your@email.com" />
+      <label>邮箱 / 手机号</label>
+      <input type="text" id="register-account" placeholder="your@email.com 或 13800138000" autocomplete="username" />
     </div>
     <div class="form-group">
       <label>密码 <span style="font-weight:normal;color:#9ca3af">(至少6位)</span></label>
-      <input type="password" id="register-password" placeholder="••••••••" />
+      <input type="password" id="register-password" placeholder="••••••••" autocomplete="new-password" />
     </div>
     <div id="register-error" style="color:#dc2626;font-size:12px;display:none;margin-bottom:8px"></div>
+    <div id="register-hint" style="color:#6b7280;font-size:11px;display:none;margin-bottom:8px"></div>
     <div class="btn-row">
       <button class="btn btn-secondary" id="register-cancel">取消</button>
       <button class="btn btn-primary" id="register-submit">注册</button>
