@@ -58,17 +58,34 @@ async function login(account, password, baseEndpoint) {
   if (isPhone(account)) {
     return { success: false, skipRequest: true, message: "当前云端服务仅支持邮箱登录，请改用邮箱账号（手机号登录暂未开通）" };
   }
-  const resp = await fetch(url, {
+
+  // 主端点请求
+  let resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email: account, password }),
   });
+  let usedEndpoint = endpoint;
+
+  // 主端点 404 时，尝试 fallback（与 popup-sync.js 的 CLOUD_ENDPOINT_FALLBACK 对应）
+  if (resp.status === 404 && APP_CONFIG.CLOUD_ENDPOINT_FALLBACK) {
+    const fallback = APP_CONFIG.CLOUD_ENDPOINT_FALLBACK.replace(/\/+$/, "");
+    const fallbackUrl = `${fallback}${APP_CONFIG.AUTH.LOGIN}`;
+    console.log(`  ↪ 主端点 ${endpoint} 返回 404，尝试 fallback ${fallback}`);
+    resp = await fetch(fallbackUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: account, password }),
+    });
+    usedEndpoint = fallback;
+  }
+
   let result;
   try { result = await resp.json(); }
-  catch { return { success: false, message: classifyHttpStatus(resp, endpoint) }; }
+  catch { return { success: false, message: classifyHttpStatus(resp, usedEndpoint) }; }
   if (!resp.ok) {
     const fromServer = result?.message || result?.msg;
-    return { success: false, message: fromServer || classifyHttpStatus(resp, endpoint) };
+    return { success: false, message: fromServer || classifyHttpStatus(resp, usedEndpoint) };
   }
   if ((result.code === 0 || result.isSuccess) && result.data) return { success: true, data: result.data };
   return { success: false, message: result.message || "登录失败" };
