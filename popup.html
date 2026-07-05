@@ -600,6 +600,17 @@
 <!-- ══════════ TAB: AI 配置 ══════════ -->
 <div class="tab-panel active" id="tab-ai">
 
+  <!-- 默认模型提示横幅 -->
+  <div id="ai-default-banner" style="background:linear-gradient(135deg,#eef2ff,#faf5ff);border:1px solid #c7d2fe;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:600;color:#4f46e5">当前默认模型：LongCat-2.0 🐱</div>
+      <div style="color:#6b7280;font-size:11px;margin-top:2px">OpenAI 兼容 · 在 https://longcat.chat/platform/api_keys 申请 API Key</div>
+    </div>
+    <button class="btn btn-primary" id="btn-add-longcat-quick" style="flex-shrink:0;font-size:12px;padding:6px 12px">
+      ➕ 一键配置
+    </button>
+  </div>
+
   <!-- 多模型列表 -->
   <div class="section">
     <div class="section-title">🔌 大模型配置（支持多个，优先使用默认）</div>

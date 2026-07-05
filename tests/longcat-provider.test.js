@@ -122,6 +122,16 @@ test("background.js 多模型回退默认 provider 改为 longcat", () => {
 test("background.js isFreeQuotaExceededError 含 longcat 关键词", () =>
   /longcat:\s*\[/.test(bgSrc));
 
+test("popup.html 顶部默认模型提示横幅含 longcat", () =>
+  /id="ai-default-banner"[\s\S]*?LongCat-2\.0/.test(popupHtml));
+
+test("popup.html 有 'btn-add-longcat-quick' 一键配置按钮", () =>
+  /id="btn-add-longcat-quick"/.test(popupHtml));
+
+test("popup.js 一键配置按钮有 click handler，自动选 longcat", () => {
+  return /btn-add-longcat-quick[\s\S]{0,300}\.value\s*=\s*"longcat"/.test(popupSrc);
+});
+
 console.log("\n" + "═".repeat(50));
 console.log(`📊 longcat 测试结果: ${passed} 通过, ${failed} 失败`);
 console.log("═".repeat(50));

@@ -166,6 +166,16 @@ function openAiConfigModal(idx = -1) {
   modal.classList.add("open");
 }
 
+// ── 一键配置 LongCat（横幅按钮入口）──────────────
+document.getElementById("btn-add-longcat-quick")?.addEventListener("click", () => {
+  openAiConfigModal(-1);
+  document.getElementById("ai-provider").value = "longcat";
+  // 触发 change 事件以让 popup 自动填 baseUrl/model
+  document.getElementById("ai-provider").dispatchEvent(new Event("change"));
+  document.getElementById("ai-config-name").value = "LongCat";
+  document.getElementById("ai-api-key").focus();
+});
+
 // ── Provider 选择事件 ─────────────────────────────
 document.getElementById("ai-provider").addEventListener("change", function() {
   const val = this.value;
