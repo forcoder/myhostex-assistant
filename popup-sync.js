@@ -457,6 +457,13 @@ async function renderKnowledgeBaseList() {
 
   if (items.length === 0) {
     container.innerHTML = '<div class="empty-tip" style="color:#9ca3af;text-align:center;padding:14px 0">暂无规则</div>';
+    // 数量徽章也置 0
+    const cnt = document.getElementById("sync-rules-count");
+    if (cnt) {
+      cnt.textContent = "0 条";
+      cnt.style.background = "#f3f4f6";
+      cnt.style.color = "#6b7280";
+    }
     return;
   }
 
@@ -475,6 +482,20 @@ async function renderKnowledgeBaseList() {
   }).join("");
 
   container.innerHTML = html;
+
+  // 标题旁数量徽章：分别显示总条数 / 启用 / 禁用
+  const cnt = document.getElementById("sync-rules-count");
+  if (cnt) {
+    const enabled = items.filter(i => i.enabled).length;
+    const disabled = items.length - enabled;
+    const parts = [`共 ${items.length} 条`];
+    if (disabled > 0) parts.push(`启用 ${enabled}`);
+    cnt.textContent = parts.join(" · ");
+    cnt.style.background = "#ede9fe";
+    cnt.style.color = "#4f46e5";
+    cnt.title = disabled > 0 ? `共 ${items.length} 条，${enabled} 条启用，${disabled} 条禁用` : `共 ${items.length} 条，全部启用`;
+  }
+
   console.log(`[Popup-Sync] 知识库规则已渲染: ${items.length} 条 (kb=${kb.length}, replyRules=${rr.length})`);
 }
 
