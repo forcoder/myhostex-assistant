@@ -405,43 +405,77 @@ async function renderLocalDataStats(stats) {
 }
 
 /**
- * 渲染知识库规则列表（读取 chrome.storage.local 的 knowledgeBase / replyRules）
+ * 渲染知识库规则列表
+ *
+ * 数据来源（按优先级，均为 chrome.storage.local）：
+ *  1. knowledgeBase —— 关键词回复 Tab 写入，对象结构（含 trigger_condition/reply_content/status）
+ *  2. replyRules —— 规则 Tab 写入，纯字符串数组（每条就是一个回复文本）
  */
 async function renderKnowledgeBaseList() {
   const container = document.getElementById("sync-rules-list");
   if (!container) return;
 
-  // 知识库存在两份：knowledgeBase（详细含 trigger_type/status）、replyRules（导出 JSON 用）
   const result = await chrome.storage.local.get(["knowledgeBase", "replyRules"]);
-  const rules = Array.isArray(result.knowledgeBase) && result.knowledgeBase.length > 0
-    ? result.knowledgeBase
-    : (Array.isArray(result.replyRules) ? result.replyRules : []);
+  const items = [];
 
-  if (rules.length === 0) {
+  // 来源 1：knowledgeBase（结构化对象）
+  const kb = Array.isArray(result.knowledgeBase) ? result.knowledgeBase : [];
+  kb.forEach((r, idx) => {
+    const enabled = r.status !== "禁用";
+    const condRaw = (r.trigger_condition || "").replace(/^(?:关键字|关键词|keyword)[\s]*[:：][\s]*/i, "").trim();
+    const reply = r.reply_content || r.reply || "";
+    const type = r.trigger_type || "关键词回复";
+    const used = r.trigger_count || 0;
+    const props = r.applicable_properties || "全部";
+    items.push({
+      kind: "kb",
+      enabled,
+      cond: condRaw || "(无关键词)",
+      reply,
+      type,
+      used,
+      props,
+    });
+  });
+
+  // 来源 2：replyRules（纯字符串）
+  const rr = Array.isArray(result.replyRules) ? result.replyRules : [];
+  rr.forEach((text) => {
+    if (typeof text !== "string") return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    items.push({
+      kind: "rule",
+      enabled: true,
+      cond: "(规则)",
+      reply: trimmed,
+      type: "回复规则",
+      used: 0,
+      props: "全部",
+    });
+  });
+
+  if (items.length === 0) {
     container.innerHTML = '<div class="empty-tip" style="color:#9ca3af;text-align:center;padding:14px 0">暂无规则</div>';
     return;
   }
 
-  const items = rules.map((r, idx) => {
-    const enabled = r.status !== "禁用";
-    const condRaw = (r.trigger_condition || "").replace(/^(?:关键字|关键词|keyword)[\s]*[:：][\s]*/i, "").trim();
-    const reply = (r.reply_content || r.reply || "").slice(0, 80);
-    const type = r.trigger_type || "关键词回复";
-    const used = r.trigger_count || 0;
-    const props = r.applicable_properties || "全部";
+  const html = items.map((it, idx) => {
+    const bg = it.enabled ? "#4f46e5" : "#9ca3af";
     return `
-      <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;border-bottom:1px dashed #e5e7eb;${enabled ? '' : 'opacity:.55'}">
-        <span style="flex-shrink:0;width:18px;height:18px;background:${enabled ? '#4f46e5' : '#9ca3af'};color:#fff;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">${idx + 1}</span>
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;border-bottom:1px dashed #e5e7eb;${it.enabled ? '' : 'opacity:.55'}">
+        <span style="flex-shrink:0;width:18px;height:18px;background:${bg};color:#fff;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">${idx + 1}</span>
         <div style="flex:1;min-width:0">
-          <div style="font-size:12px;color:#1e1b4b;font-weight:600;word-break:break-all">${escapeHtmlSync(condRaw || '(无关键词)')}</div>
-          <div style="font-size:11px;color:#6b7280;line-height:1.4;margin-top:2px;word-break:break-all">→ ${escapeHtmlSync(reply)}</div>
-          <div style="font-size:10px;color:#9ca3af;margin-top:2px">📌 ${escapeHtmlSync(type)} · 适用：${escapeHtmlSync(props)} · 触发：${used} 次</div>
+          <div style="font-size:12px;color:#1e1b4b;font-weight:600;word-break:break-all">${escapeHtmlSync(it.cond)}</div>
+          <div style="font-size:11px;color:#6b7280;line-height:1.4;margin-top:2px;word-break:break-all">→ ${escapeHtmlSync((it.reply || '').slice(0, 80))}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:2px">📌 ${escapeHtmlSync(it.type)} · 适用：${escapeHtmlSync(it.props)} · 触发：${it.used} 次</div>
         </div>
       </div>
     `;
   }).join("");
 
-  container.innerHTML = items;
+  container.innerHTML = html;
+  console.log(`[Popup-Sync] 知识库规则已渲染: ${items.length} 条 (kb=${kb.length}, replyRules=${rr.length})`);
 }
 
 /**
