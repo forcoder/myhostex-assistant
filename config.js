@@ -14,10 +14,10 @@ const APP_CONFIG = {
   MYHOSTEX_DOMAIN: "www.myhostex.com",
 
   // ── 云端同步服务端点 ──────────────────────────
-  /** 主端点（popup 同步界面默认值）：csBaby 后端，承载 /auth/login、/sync/push */
-  CLOUD_ENDPOINT: "http://sync.agentai0.com",
-  /** 备用端点（同步上传失败时的回退，兼容旧部署） */
-  CLOUD_ENDPOINT_FALLBACK: "http://api.agentai0.com",
+  /** 主端点（popup 同步界面默认值）：nginx 反代，承载 /auth/login、/sync/push */
+  CLOUD_ENDPOINT: "http://api.agentai0.com",
+  /** 备用端点（同步上传失败时的回退，指向直连后端） */
+  CLOUD_ENDPOINT_FALLBACK: "http://sync.agentai0.com",
 
   // ── 认证 API 路径 ─────────────────────────────
   AUTH: {

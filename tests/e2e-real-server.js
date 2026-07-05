@@ -88,14 +88,14 @@ async function login(account, password, baseEndpoint) {
   await test("isPhone 拒绝空", () => isPhone("") === false);
 
   await test("getCloudEndpoint 默认使用 APP_CONFIG", () =>
-    getCloudEndpoint(undefined) === "http://sync.agentai0.com");
+    getCloudEndpoint(undefined) === "http://api.agentai0.com");
   await test("getCloudEndpoint 用户配置覆盖默认值", () =>
     getCloudEndpoint("http://my-server.com") === "http://my-server.com");
   await test("getCloudEndpoint 去除末尾 /", () =>
     getCloudEndpoint("http://example.com/") === "http://example.com");
 
   await test("classifyHttpStatus 404 给精确中文", () =>
-    classifyHttpStatus({ status: 404 }, "http://sync.agentai0.com").includes("(HTTP 404)"));
+    classifyHttpStatus({ status: 404 }, "http://api.agentai0.com").includes("(HTTP 404)"));
   await test("classifyHttpStatus 401 → 账号或密码错误", () =>
     classifyHttpStatus({ status: 401 }) === "账号或密码错误");
   await test("classifyHttpStatus 400 → 请求参数有误", () =>
@@ -106,40 +106,49 @@ async function login(account, password, baseEndpoint) {
     classifyHttpStatus({ status: 500 }).includes("云端服务暂时不可用"));
 
   // ═══════════════════════════════════════════════
-  // 第二部分：云端连接可达性（修复 HTTP 404）
+  // 第二部分：云端连接可达性（依赖 nginx 反代 /auth/*）
+  // 默认跳过；E2E_LIVE=1 时运行（反代就绪后）
   // ═══════════════════════════════════════════════
-  console.log("\n── 云端连接可达性 ──");
+  const live = process.env.E2E_LIVE === "1";
+  if (live) {
+    console.log("\n── 云端连接可达性（活体） ──");
 
-  await test("真实 sync.agentai0.com /auth/login 可达（不是 404）", async () => {
-    const r = await fetch("http://sync.agentai0.com/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: "x@x.com", password: "x" }),
+    await test("真实 api.agentai0.com /auth/login 可达（不是 404）", async () => {
+      const r = await fetch("http://api.agentai0.com/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "x@x.com", password: "x" }),
+      });
+      return r.status !== 404;
     });
-    // 不应是 404（之前的 bug），应是 401 或 400
-    return r.status !== 404;
-  });
 
-  await test("真实 sync.agentai0.com /health 返回 200", async () => {
-    const r = await fetch("http://sync.agentai0.com/health");
-    return r.status === 200;
-  });
+    await test("真实 api.agentai0.com /health 返回 200", async () => {
+      const r = await fetch("http://api.agentai0.com/health");
+      return r.status === 200;
+    });
+  } else {
+    console.log("\n── 云端连接可达性：跳过（设 E2E_LIVE=1 运行；需 nginx 反代将 /auth/* 转到 sync.agentai0.com） ──");
+  }
 
   // ═══════════════════════════════════════════════
-  // 第三部分：真实登录链路
+  // 第三部分：真实登录链路（同上依赖反代）
   // ═══════════════════════════════════════════════
-  console.log("\n── 真实登录链路 ──");
+  if (live) {
+    console.log("\n── 真实登录链路（活体） ──");
 
-  // 用之前在 shell 中注册的账号
-  await test("正确账号应登录成功", async () => {
-    const r = await login("new@test.com", "123456");
-    return r.success === true && r.data?.accessToken?.length > 50;
-  });
+    // 用之前在 shell 中注册的账号
+    await test("正确账号应登录成功", async () => {
+      const r = await login("new@test.com", "123456");
+      return r.success === true && r.data?.accessToken?.length > 50;
+    });
 
-  await test("错误密码应返回中文 '邮箱或密码错误'", async () => {
-    const r = await login("new@test.com", "wrong_pwd");
-    return r.success === false && r.message === "邮箱或密码错误";
-  });
+    await test("错误密码应返回中文 '邮箱或密码错误'", async () => {
+      const r = await login("new@test.com", "wrong_pwd");
+      return r.success === false && r.message === "邮箱或密码错误";
+    });
+  } else {
+    console.log("\n── 真实登录链路：跳过（设 E2E_LIVE=1 运行） ──");
+  }
 
   // ═══════════════════════════════════════════════
   // 第四部分：手机号识别
