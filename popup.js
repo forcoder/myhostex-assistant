@@ -1228,6 +1228,15 @@ document.getElementById("btn-clear-style").addEventListener("click", async () =>
 // 初始化
 // ═══════════════════════════════════════════════
 async function init() {
+  // ── 同步标题版本号：始终从 manifest 读取，杜绝漏改 ──
+  try {
+    const ver = chrome.runtime.getManifest().version;
+    const el = document.getElementById("popup-subtitle");
+    if (el && ver) {
+      el.textContent = `MyHostex · AI 驱动 · 多模型自动降级 · 云端同步 · v${ver}`;
+    }
+  } catch (_) { /* 静默：非扩展环境（如测试）不报错 */ }
+
   const data = await chrome.storage.local.get([
     "aiConfigs", "aiConfig", "rooms", "propInfo", "replyRules", "userStyle", "settings", "knowledgeBase", "mha_config", "maxSuggestions", "lang",
   ]);

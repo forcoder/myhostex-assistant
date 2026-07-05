@@ -122,6 +122,14 @@ test("background.js 多模型回退默认 provider 改为 longcat", () => {
 test("background.js isFreeQuotaExceededError 含 longcat 关键词", () =>
   /longcat:\s*\[/.test(bgSrc));
 
+test("popup.html 标题占位用 id=popup-subtitle（避免硬编码版本号漏改）", () =>
+  /id="popup-subtitle"/.test(popupHtml) &&
+  !/subtitle">MyHostex.*v\d+\.\d+\.\d+</.test(popupHtml));
+
+test("popup.js init() 调用 chrome.runtime.getManifest().version 注入版本", () =>
+  /chrome\.runtime\.getManifest\(\)\.version/.test(popupSrc) &&
+  /popup-subtitle/.test(popupSrc));
+
 test("popup.html 顶部默认模型提示横幅含 longcat", () =>
   /id="ai-default-banner"[\s\S]*?LongCat-2\.0/.test(popupHtml));
 
