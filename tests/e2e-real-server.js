@@ -153,16 +153,22 @@ async function login(account, password, baseEndpoint) {
   if (live) {
     console.log("\n── 真实登录链路（活体） ──");
 
-    // 用之前在 shell 中注册的账号
-    await test("正确账号应登录成功", async () => {
-      const r = await login("new@test.com", "123456");
-      return r.success === true && r.data?.accessToken?.length > 50;
-    });
+    // 真实账号登录：需 E2E_ACCOUNT / E2E_PASSWORD 环境变量（如未配置则跳过而非失败）
+    const liveAcct = process.env.E2E_ACCOUNT;
+    const livePwd = process.env.E2E_PASSWORD;
+    if (!liveAcct || !livePwd) {
+      console.log("  ⏭  真实登录链路：跳过（设 E2E_ACCOUNT + E2E_PASSWORD 启用）");
+    } else {
+      await test(`正确账号 ${liveAcct} 应登录成功`, async () => {
+        const r = await login(liveAcct, livePwd);
+        return r.success === true && r.data?.accessToken?.length > 50;
+      });
 
-    await test("错误密码应返回中文 '邮箱或密码错误'", async () => {
-      const r = await login("new@test.com", "wrong_pwd");
-      return r.success === false && r.message === "邮箱或密码错误";
-    });
+      await test("错误密码应返回中文 '邮箱或密码错误'", async () => {
+        const r = await login(liveAcct, livePwd + "_wrong");
+        return r.success === false && r.message === "邮箱或密码错误";
+      });
+    }
   } else {
     console.log("\n── 真实登录链路：跳过（设 E2E_LIVE=1 运行） ──");
   }
