@@ -420,7 +420,7 @@ function extractPageData(originalUrl) {
  * 用 AI 整理从页面抓取到的原始数据，输出结构化房源信息
  */
 async function enrichWithAI(rawData, aiConfig) {
-  const { provider = "openai", apiKey, model, baseUrl: customBase } = aiConfig;
+  const { provider = "longcat", apiKey, model, baseUrl: customBase } = aiConfig;
   const baseUrl = (customBase || getDefaultBaseUrl(provider)).replace(/\/$/, "");
 
   const prompt = `你是一个数据整理助手。以下是从民宿管理系统页面抓取的原始数据，请整理成结构化的房源信息。
@@ -571,7 +571,7 @@ async function handleGenerateSuggestions(msg) {
   let lastError = null;
   for (let i = 0; i < sortedConfigs.length; i++) {
     const cfg = sortedConfigs[i];
-    const { provider = "openai", apiKey, model } = cfg;
+    const { provider = "longcat", apiKey, model } = cfg;
     const baseUrl = (cfg.baseUrl || getDefaultBaseUrl(provider)).replace(/\/$/, "");
 
     console.log(`[MyHostex助手][BG] 尝试使用模型 ${i + 1}/${sortedConfigs.length}: ${cfg.name || provider}`);
@@ -744,11 +744,12 @@ function parseSuggestions(raw, max) {
 
 function getDefaultBaseUrl(p) {
   return ({
+    longcat:  "https://api.longcat.chat/openai/v1",
     openai:   "https://api.openai.com/v1",
     deepseek: "https://api.deepseek.com/v1",
     qwen:     "https://dashscope.aliyuncs.com/compatible-mode/v1",
     zhipu:    "https://open.bigmodel.cn/api/paas/v4",
-  })[p] || "https://api.openai.com/v1";
+  })[p] || "https://api.longcat.chat/openai/v1";
 }
 
 // ── 免费额度检测 ───────────────────────────────
@@ -763,6 +764,7 @@ function isFreeQuotaExceededError(errorMsg, provider) {
     openai: ["quota exceeded", "rate limit", "额度"],
     deepseek: ["额度", "quota"],
     zhipu: ["额度", "quota"],
+    longcat: ["quota exceeded", "rate limit", "额度"],
   };
 
   const keywords = quotaKeywords[provider] || quotaKeywords.openai;
@@ -801,11 +803,12 @@ async function markQuotaExceeded(quotaConfig) {
 
 function getDefaultModel(p) {
   return ({
+    longcat:  "LongCat-2.0",
     openai:   "gpt-4o",
     deepseek: "deepseek-chat",
     qwen:     "qwen-plus",
     zhipu:    "glm-4-flash",
-  })[p] || "gpt-4o";
+  })[p] || "LongCat-2.0";
 }
 
 // ══════════════════════════════════════════════

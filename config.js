@@ -33,13 +33,18 @@ const APP_CONFIG = {
   },
 
   // ── AI Provider 默认配置 ──────────────────────
+  // 默认模型提供商：longcat（OpenAI 兼容 / Bearer 鉴权 / 默认 LongCat-2.0）
   AI_PROVIDERS: {
-    openai:   { baseUrl: "https://api.openai.com/v1",                         model: "gpt-4o" },
-    deepseek: { baseUrl: "https://api.deepseek.com/v1",                       model: "deepseek-chat" },
+    longcat:  { baseUrl: "https://api.longcat.chat/openai/v1",        model: "LongCat-2.0" },
+    openai:   { baseUrl: "https://api.openai.com/v1",                  model: "gpt-4o" },
+    deepseek: { baseUrl: "https://api.deepseek.com/v1",                model: "deepseek-chat" },
     qwen:     { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
-    zhipu:    { baseUrl: "https://open.bigmodel.cn/api/paas/v4",              model: "glm-4-flash" },
-    custom:   { baseUrl: "",                                                  model: "" },
+    zhipu:    { baseUrl: "https://open.bigmodel.cn/api/paas/v4",       model: "glm-4-flash" },
+    custom:   { baseUrl: "",                                           model: "" },
   },
+
+  // ── 默认 AI 模型提供商 ────────────────────────
+  DEFAULT_AI_PROVIDER: "longcat",
 
   // ── Qwen 导入默认 Provider ─────────────────────
   QWEN_DEFAULT_PROVIDER: "qwen",
@@ -51,6 +56,7 @@ const APP_CONFIG = {
     "https://api.deepseek.com/*",
     "https://dashscope.aliyuncs.com/*",
     "https://open.bigmodel.cn/*",
+    "https://api.longcat.chat/*",
     "*://*/*",
     "https://*.supabase.com/*",
     "http://api.agentai0.com/*",
@@ -58,5 +64,5 @@ const APP_CONFIG = {
   ],
 
   // ── CSP connect-src（供参考） ─────────────────
-  CSP_CONNECT_SRC: "http://sync.agentai0.com http://api.agentai0.com http://localhost:*",
+  CSP_CONNECT_SRC: "http://sync.agentai0.com http://api.agentai0.com http://localhost:* https://api.longcat.chat",
 };

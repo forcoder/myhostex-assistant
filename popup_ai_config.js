@@ -4,6 +4,7 @@
 
 // ── Provider 默认配置 ─────────────────────────
 const PROVIDER_DEFAULTS = {
+  longcat:  { baseUrl: "https://api.longcat.chat/openai/v1",    model: "LongCat-2.0" },
   openai:   { baseUrl: "https://api.openai.com/v1",           model: "gpt-4o" },
   deepseek: { baseUrl: "https://api.deepseek.com/v1",         model: "deepseek-chat" },
   qwen:     { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },

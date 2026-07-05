@@ -58,6 +58,7 @@ function showStatus(id, msg, type = "ok") {
 
 // ── Provider 默认配置 ─────────────────────────
 const PROVIDER_DEFAULTS = {
+  longcat:  { baseUrl: "https://api.longcat.chat/openai/v1",    model: "LongCat-2.0" },
   openai:   { baseUrl: "https://api.openai.com/v1",           model: "gpt-4o" },
   deepseek: { baseUrl: "https://api.deepseek.com/v1",         model: "deepseek-chat" },
   qwen:     { baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", model: "qwen-plus" },
@@ -83,6 +84,7 @@ function renderAiConfigs() {
     card.className = "ai-config-card" + (cfg.isDefault ? " default" : "");
 
     const providerName = {
+      longcat: "LongCat",
       openai: "OpenAI",
       deepseek: "DeepSeek",
       qwen: "通义千问",
@@ -141,7 +143,7 @@ function openAiConfigModal(idx = -1) {
   // 清空或填充表单
   if (idx === -1) {
     document.getElementById("ai-config-name").value = "";
-    document.getElementById("ai-provider").value = "openai";
+    document.getElementById("ai-provider").value = "longcat";
     document.getElementById("ai-base-url").value = "";
     document.getElementById("ai-api-key").value = "";
     document.getElementById("ai-model").value = "";
@@ -150,7 +152,7 @@ function openAiConfigModal(idx = -1) {
   } else {
     const cfg = aiConfigs[idx];
     document.getElementById("ai-config-name").value = cfg.name || "";
-    document.getElementById("ai-provider").value = cfg.provider || "openai";
+    document.getElementById("ai-provider").value = cfg.provider || "longcat";
     document.getElementById("ai-base-url").value = cfg.baseUrl || "";
     document.getElementById("ai-api-key").value = cfg.apiKey || "";
     document.getElementById("ai-model").value = cfg.model || "";
@@ -183,7 +185,7 @@ document.getElementById("btn-test-api-in-modal").addEventListener("click", async
     || PROVIDER_DEFAULTS[provider]?.baseUrl || "";
   const apiKey = document.getElementById("ai-api-key").value.trim();
   const model = document.getElementById("ai-model").value.trim()
-    || PROVIDER_DEFAULTS[provider]?.model || "gpt-4o";
+    || PROVIDER_DEFAULTS[provider]?.model || "LongCat-2.0";
 
   if (!apiKey) { setApiModalStatus("err", "请先填写 API Key"); return; }
 
@@ -229,7 +231,7 @@ document.getElementById("btn-save-ai-config").addEventListener("click", async ()
     || PROVIDER_DEFAULTS[provider]?.baseUrl || "";
   const apiKey = document.getElementById("ai-api-key").value.trim();
   const model = document.getElementById("ai-model").value.trim()
-    || PROVIDER_DEFAULTS[provider]?.model || "gpt-4o";
+    || PROVIDER_DEFAULTS[provider]?.model || "LongCat-2.0";
   const isDefault = document.getElementById("ai-config-default").checked;
 
   if (!name) { alert("请填写配置名称"); return; }
@@ -335,10 +337,10 @@ async function loadAiConfigs() {
     aiConfigs = [{
       id: Date.now().toString(),
       name: "默认配置",
-      provider: res.aiConfig.provider || "openai",
+      provider: res.aiConfig.provider || "longcat",
       baseUrl: res.aiConfig.baseUrl || "",
       apiKey: res.aiConfig.apiKey,
-      model: res.aiConfig.model || "gpt-4o",
+      model: res.aiConfig.model || "LongCat-2.0",
       isDefault: true,
     }];
     await saveAiConfigs();

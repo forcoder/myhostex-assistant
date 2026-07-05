@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "MyHostex 智能回复助手",
-  "version": "3.13.4",
-  "description": "接入大模型，结合房间信息（自动抓取）与回复规则，智能生成个性化回复建议，并学习房东回复风格 - v3.13.4 改回 api.agentai0.com 单域名",
+  "version": "3.13.5",
+  "description": "接入大模型，结合房间信息（自动抓取）与回复规则，智能生成个性化回复建议，并学习房东回复风格 - v3.13.5 接入 longcat 模型并设为默认",
   "permissions": [
     "storage",
     "notifications",
@@ -18,6 +18,7 @@
     "https://api.deepseek.com/*",
     "https://dashscope.aliyuncs.com/*",
     "https://open.bigmodel.cn/*",
+    "https://api.longcat.chat/*",
     "*://*/*",
     "https://*.supabase.com/*",
     "http://api.agentai0.com/*"
