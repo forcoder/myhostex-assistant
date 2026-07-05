@@ -1485,7 +1485,8 @@ function updateSyncAuthUI() {
     authEl.style.display = "block";
     const auth = syncAuthManager.getAuth();
     if (tenantEl && auth) {
-      tenantEl.textContent = `租户: ${auth.tenantId || auth.userId}`;
+      // 优先显示账号（邮箱 / 手机号），无账号时回退到租户 ID
+      tenantEl.textContent = `账号: ${auth.account || auth.userId}`;
     }
   } else {
     unauthEl.style.display = "block";

@@ -146,6 +146,7 @@ class SyncAuthManager {
       // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
       if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
+          account: account,
           userId: result.data.userId,
           tenantId: result.data.tenantId || result.data.userId,
           accessToken: result.data.accessToken,
@@ -199,6 +200,7 @@ class SyncAuthManager {
 
       if ((result.code === 0 || result.isSuccess) && result.data) {
         const auth = {
+          account: account,
           userId: result.data.userId,
           tenantId: result.data.tenantId || result.data.userId,
           accessToken: result.data.accessToken,
@@ -240,6 +242,7 @@ class SyncAuthManager {
       const result = await resp.json();
       if (result.isSuccess && result.data) {
         const auth = {
+          account: this._auth?.account,
           userId: result.data.userId,
           tenantId: result.data.tenantId || result.data.userId,
           accessToken: result.data.accessToken,
@@ -335,6 +338,9 @@ async function checkSyncStatus() {
       dataCountEl.textContent = `${totalKeys} 个模块（${stats.totalItems} 条记录）`;
     }
 
+    // 更新本地数据行 + 按模块明细 + 知识库规则列表
+    renderLocalDataStats(stats);
+
     // 更新同步状态徽章
     await showSyncStatus(metadata);
 
@@ -347,6 +353,104 @@ async function checkSyncStatus() {
     showSyncError();
     return { status: SYNC_STATUS.ERROR, metadata: null };
   }
+}
+
+/**
+ * 渲染本地数据统计：顶部"本地数据:N 个模块（M 条记录）"
+ * + 按模块明细 + 知识库规则列表
+ * @param {Object} stats - syncService.getStorageStats() 返回值
+ */
+async function renderLocalDataStats(stats) {
+  // 顶部摘要
+  const totalKeys = Object.keys(stats.byKey).filter(
+    (k) => stats.byKey[k].type !== "empty"
+  ).length;
+  const localEl = document.getElementById("sync-data-count-local");
+  if (localEl) {
+    localEl.textContent = totalKeys
+      ? `${totalKeys} 个模块（${stats.totalItems} 条记录）`
+      : "暂无数据";
+  }
+
+  // 按模块明细
+  const detailEl = document.getElementById("sync-local-detail");
+  if (detailEl) {
+    const labelMap = {
+      mha_config: "助手配置",
+      userStyle: "回复风格",
+      rooms: "房源",
+      propInfo: "房源信息",
+      replyRules: "回复规则",
+      aiConfig: "AI 配置（单）",
+      aiConfigs: "AI 模型",
+      knowledgeBase: "知识库",
+      settings: "设置",
+    };
+    const items = [];
+    for (const key of syncService.SYNC_KEYS) {
+      const s = stats.byKey[key];
+      if (!s || s.type === "empty") continue;
+      const count = s.type === "array" ? s.count : (s.type === "object" ? s.keys : 1);
+      items.push(
+        `<span style="display:inline-block;margin:0 8px 4px 0">${labelMap[key] || key}：<b>${count}</b></span>`
+      );
+    }
+    detailEl.innerHTML = items.length
+      ? items.join("")
+      : '<span style="color:#9ca3af">本地尚无同步数据</span>';
+  }
+
+  // 知识库规则列表
+  await renderKnowledgeBaseList();
+}
+
+/**
+ * 渲染知识库规则列表（读取 chrome.storage.local 的 knowledgeBase / replyRules）
+ */
+async function renderKnowledgeBaseList() {
+  const container = document.getElementById("sync-rules-list");
+  if (!container) return;
+
+  // 知识库存在两份：knowledgeBase（详细含 trigger_type/status）、replyRules（导出 JSON 用）
+  const result = await chrome.storage.local.get(["knowledgeBase", "replyRules"]);
+  const rules = Array.isArray(result.knowledgeBase) && result.knowledgeBase.length > 0
+    ? result.knowledgeBase
+    : (Array.isArray(result.replyRules) ? result.replyRules : []);
+
+  if (rules.length === 0) {
+    container.innerHTML = '<div class="empty-tip" style="color:#9ca3af;text-align:center;padding:14px 0">暂无规则</div>';
+    return;
+  }
+
+  const items = rules.map((r, idx) => {
+    const enabled = r.status !== "禁用";
+    const condRaw = (r.trigger_condition || "").replace(/^(?:关键字|关键词|keyword)[\s]*[:：][\s]*/i, "").trim();
+    const reply = (r.reply_content || r.reply || "").slice(0, 80);
+    const type = r.trigger_type || "关键词回复";
+    const used = r.trigger_count || 0;
+    const props = r.applicable_properties || "全部";
+    return `
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:6px 4px;border-bottom:1px dashed #e5e7eb;${enabled ? '' : 'opacity:.55'}">
+        <span style="flex-shrink:0;width:18px;height:18px;background:${enabled ? '#4f46e5' : '#9ca3af'};color:#fff;border-radius:50%;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center">${idx + 1}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;color:#1e1b4b;font-weight:600;word-break:break-all">${escapeHtmlSync(condRaw || '(无关键词)')}</div>
+          <div style="font-size:11px;color:#6b7280;line-height:1.4;margin-top:2px;word-break:break-all">→ ${escapeHtmlSync(reply)}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:2px">📌 ${escapeHtmlSync(type)} · 适用：${escapeHtmlSync(props)} · 触发：${used} 次</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  container.innerHTML = items;
+}
+
+/**
+ * popup-sync.js 局部 HTML 转义（不依赖其他模块的 escapeHtml）
+ */
+function escapeHtmlSync(str) {
+  const div = document.createElement("div");
+  div.textContent = String(str || "");
+  return div.innerHTML;
 }
 
 /**
