@@ -17,7 +17,95 @@ const SYNC_CONFIG_KEY = "sync_config";
 // ── 认证状态存储键 ───────────────────────────
 const SYNC_AUTH_KEY = "sync_auth";
 
-// ── 网络工具与端点单一来源 ─────────────────────
+// ── 同步日志系统 ──────────────────────────────
+const SYNC_LOG_KEY = "sync_logs";
+const SYNC_LOG_MAX = 500;
+
+const SyncLogger = {
+  _idCounter: 0,
+  _saveQueue: Promise.resolve(),
+
+  _now() { return new Date().toISOString(); },
+
+  async _save(entry) {
+    // 串行化存储，避免竞态
+    this._saveQueue = this._saveQueue.then(async () => {
+      try {
+        const result = await chrome.storage.local.get(SYNC_LOG_KEY);
+        let logs = Array.isArray(result[SYNC_LOG_KEY]) ? result[SYNC_LOG_KEY] : [];
+        logs.push(entry);
+        if (logs.length > SYNC_LOG_MAX) logs = logs.slice(-SYNC_LOG_MAX);
+        await chrome.storage.local.set({ [SYNC_LOG_KEY]: logs });
+      } catch (e) {
+        console.warn("[SyncLog] 保存日志失败:", e);
+      }
+    });
+    await this._saveQueue;
+  },
+
+  info(step, message, details = null) {
+    const entry = { id: ++this._idCounter, level: "INFO", timestamp: this._now(), step, message, details };
+    console.log(`[SyncLog][INFO][${step}] ${message}`, details || "");
+    return this._save(entry);
+  },
+
+  warn(step, message, details = null) {
+    const entry = { id: ++this._idCounter, level: "WARN", timestamp: this._now(), step, message, details };
+    console.warn(`[SyncLog][WARN][${step}] ${message}`, details || "");
+    return this._save(entry);
+  },
+
+  error(step, message, details = null) {
+    const entry = { id: ++this._idCounter, level: "ERROR", timestamp: this._now(), step, message, details };
+    console.error(`[SyncLog][ERROR][${step}] ${message}`, details || "");
+    return this._save(entry);
+  },
+
+  debug(step, message, details = null) {
+    const entry = { id: ++this._idCounter, level: "DEBUG", timestamp: this._now(), step, message, details };
+    console.log(`[SyncLog][DEBUG][${step}] ${message}`, details || "");
+    return this._save(entry);
+  },
+
+  async getLogs(level = null, limit = 200) {
+    try {
+      const result = await chrome.storage.local.get(SYNC_LOG_KEY);
+      let logs = Array.isArray(result[SYNC_LOG_KEY]) ? result[SYNC_LOG_KEY] : [];
+      if (level) logs = logs.filter(l => l.level === level);
+      return logs.slice(-limit);
+    } catch { return []; }
+  },
+
+  async clearLogs() {
+    try {
+      await chrome.storage.local.remove(SYNC_LOG_KEY);
+      this._idCounter = 0;
+      this.info("系统", "日志已清除");
+    } catch (e) {
+      console.warn("[SyncLog] 清除日志失败:", e);
+    }
+  },
+
+  async getLogCount() {
+    try {
+      const result = await chrome.storage.local.get(SYNC_LOG_KEY);
+      return Array.isArray(result[SYNC_LOG_KEY]) ? result[SYNC_LOG_KEY].length : 0;
+    } catch { return 0; }
+  }
+};
+/**
+ * 安全 JSON 解析，失败时返回默认值
+ * @param {string} text
+ * @param {*} fallback
+ * @returns {*}
+ */
+function safeJsonParse(text, fallback = null) {
+  if (text === null || text === undefined) return fallback;
+  if (typeof text !== "string") return text;
+  try { return JSON.parse(text); }
+  catch (e) { return fallback; }
+}
+
 /**
  * 识别字符串是否为大陆手机号（11 位、1 开头）
  * @param {string} s
@@ -110,15 +198,7 @@ class SyncAuthManager {
   async login(account, password) {
     const endpoint = getCloudEndpoint();
     const url = `${endpoint}${APP_CONFIG.AUTH.LOGIN}`;
-    console.log("[SyncAuth] 登录请求:", url, "账号:", isPhone(account) ? "手机号" : "邮箱");
-
-    // 当前云端服务仅支持邮箱 + 密码：手机号提前给出明确提示，避免无效请求
-    if (isPhone(account)) {
-      return {
-        success: false,
-        message: "当前云端服务仅支持邮箱登录，请改用邮箱账号（手机号登录暂未开通）"
-      };
-    }
+    SyncLogger.info("登录", `发起登录请求`, { url, accountType: isPhone(account) ? "手机号" : "邮箱" });
 
     try {
       const resp = await fetch(url, {
@@ -140,25 +220,32 @@ class SyncAuthManager {
 
       if (!resp.ok) {
         const fromServer = result?.message || result?.msg;
+        SyncLogger.warn("登录", "登录失败", { status: resp.status, message: fromServer || classifyHttpStatus(resp, endpoint) });
         return { success: false, message: fromServer || classifyHttpStatus(resp, endpoint) };
       }
 
-      // 适配 csBaby 服务器格式: {"code": 0, "data": {...}} 或 {"isSuccess": true, "data": {...}}
-      if ((result.code === 0 || result.isSuccess) && result.data) {
+      // 适配 csBaby 主 API 扁平返回: {user_id, token, expires_in, ...}（无 code/data 包装）
+      // 也兼容旧格式: {code: 0, data: {...}} 或 {isSuccess: true, data: {...}}
+      const token = result.accessToken || result.token;
+      const userId = result.user_id || result.userId || result.data?.user_id || result.data?.userId;
+      if (token && userId) {
         const auth = {
           account: account,
-          userId: result.data.userId,
-          tenantId: result.data.tenantId || result.data.userId,
-          accessToken: result.data.accessToken,
-          refreshToken: result.data.refreshToken,
-          expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
+          userId: userId,
+          tenantId: result.tenantId || result.data?.tenantId || userId,
+          accessToken: token,
+          refreshToken: result.refreshToken || result.data?.refreshToken,
+          expiresAt: result.expiresAt || result.data?.expiresAt ||
+            (Date.now() + (result.expires_in || 7 * 24 * 60 * 60) * 1000)
         };
         await this.saveAuthState(auth);
+        SyncLogger.info("登录", "登录成功", { userId: auth.userId, tenantId: auth.tenantId });
         return { success: true, message: "登录成功" };
       }
+      SyncLogger.warn("登录", "登录失败 - 服务端返回格式异常", { result });
       return { success: false, message: result.message || "登录失败，请检查账号和密码" };
     } catch (err) {
-      console.error("[SyncAuth] 登录失败:", err);
+      SyncLogger.error("登录", `登录网络异常: ${err.message}`, { endpoint });
       return { success: false, message: `网络错误: ${err.message}\n当前云端地址: ${endpoint}` };
     }
   }
@@ -166,14 +253,7 @@ class SyncAuthManager {
   async register(account, password, displayName) {
     const endpoint = getCloudEndpoint();
     const url = `${endpoint}${APP_CONFIG.AUTH.REGISTER}`;
-    console.log("[SyncAuth] 注册请求:", url);
-
-    if (isPhone(account)) {
-      return {
-        success: false,
-        message: "当前云端服务仅支持邮箱注册，请改用邮箱账号（手机号注册暂未开通）"
-      };
-    }
+    SyncLogger.info("注册", `发起注册请求`, { url });
 
     try {
       const resp = await fetch(url, {
@@ -187,14 +267,13 @@ class SyncAuthManager {
       try {
         result = await resp.json();
       } catch (parseErr) {
-        console.error("[SyncAuth] 注册响应解析失败, status:", resp.status);
+        SyncLogger.error("注册", "响应解析失败", { status: resp.status });
         return { success: false, message: classifyHttpStatus(resp, endpoint) };
       }
 
-      console.log("[SyncAuth] 注册响应:", result);
-
       if (!resp.ok) {
         const fromServer = result?.message || result?.msg;
+        SyncLogger.warn("注册", "注册失败", { status: resp.status, message: fromServer || classifyHttpStatus(resp, endpoint) });
         return { success: false, message: fromServer || classifyHttpStatus(resp, endpoint) };
       }
 
@@ -208,16 +287,19 @@ class SyncAuthManager {
           expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
         };
         await this.saveAuthState(auth);
+        SyncLogger.info("注册", "注册成功", { userId: auth.userId });
         return { success: true, message: "注册成功" };
       }
+      SyncLogger.warn("注册", "注册失败 - 服务端返回格式异常", { code: result.code, isSuccess: result.isSuccess });
       return { success: false, message: result.message || "注册失败，请检查账号信息" };
     } catch (err) {
-      console.error("[SyncAuth] 注册失败:", err);
+      SyncLogger.error("注册", `注册网络异常: ${err.message}`, { endpoint });
       return { success: false, message: `网络错误: ${err.message}\n当前云端地址: ${endpoint}` };
     }
   }
 
   async logout() {
+    SyncLogger.info("登出", "执行登出");
     await this.clearAuthState();
     return { success: true, message: "已登出" };
   }
@@ -250,10 +332,12 @@ class SyncAuthManager {
           expiresAt: result.data.expiresAt || (Date.now() + 7 * 24 * 60 * 60 * 1000)
         };
         await this.saveAuthState(auth);
+        SyncLogger.info("令牌刷新", "Token 刷新成功");
         return true;
       }
+      SyncLogger.warn("令牌刷新", "Token 刷新失败 - 服务端返回异常", { isSuccess: result.isSuccess });
     } catch (err) {
-      console.error("[SyncAuth] Token 刷新失败:", err);
+      SyncLogger.warn("令牌刷新", `Token 刷新异常: ${err.message}`);
     }
     return false;
   }
@@ -276,7 +360,7 @@ let syncConfig = {
  * 初始化同步 UI，绑定事件监听器
  */
 async function initSyncUI() {
-  console.log("[Popup-Sync] 初始化同步 UI");
+  SyncLogger.info("初始化", "同步 UI 初始化");
 
   // 加载同步配置
   await loadSyncSettings();
@@ -293,10 +377,32 @@ async function initSyncUI() {
     importBtn.addEventListener("click", handleImportData);
   }
 
+  // 绑定日志查看按钮
+  const logViewBtn = document.getElementById("btn-sync-logs");
+  if (logViewBtn) {
+    logViewBtn.addEventListener("click", showSyncLogs);
+  }
+
+  // 绑定日志清空按钮
+  const logClearBtn = document.getElementById("btn-sync-logs-clear");
+  if (logClearBtn) {
+    logClearBtn.addEventListener("click", async () => {
+      if (confirm("确认清除所有同步日志？")) {
+        await SyncLogger.clearLogs();
+        document.getElementById("sync-log-modal")?.classList.remove("open");
+      }
+    });
+  }
+
+  // 绑定日志弹窗关闭
+  document.getElementById("sync-log-close")?.addEventListener("click", () => {
+    document.getElementById("sync-log-modal")?.classList.remove("open");
+  });
+
   // 检查同步状态
   await checkSyncStatus();
 
-  console.log("[Popup-Sync] 同步 UI 初始化完成");
+  SyncLogger.info("初始化", "同步 UI 初始化完成");
 }
 
 // ── 检查同步状态 ─────────────────────────────
@@ -305,12 +411,16 @@ async function initSyncUI() {
  * @returns {Promise<{status: string, metadata: Object}>}
  */
 async function checkSyncStatus() {
-  console.log("[Popup-Sync] 检查同步状态");
+  SyncLogger.debug("状态检查", "检查同步状态");
 
   try {
-    // 获取同步元数据
     const metadata = await syncService.getSyncMetadata();
     const stats = await syncService.getStorageStats();
+    SyncLogger.debug("状态检查", "当前状态", { 
+      lastSync: metadata.lastSyncTime, 
+      totalItems: stats.totalItems,
+      modules: Object.keys(stats.byKey).filter(k => stats.byKey[k].type !== "empty")
+    });
 
     // 更新上次同步时间
     const lastTimeEl = document.getElementById("sync-last-time");
@@ -349,7 +459,7 @@ async function checkSyncStatus() {
       metadata,
     };
   } catch (err) {
-    console.error("[Popup-Sync] 检查同步状态失败:", err);
+    SyncLogger.error("状态检查", `检查同步状态失败: ${err.message}`);
     showSyncError();
     return { status: SYNC_STATUS.ERROR, metadata: null };
   }
@@ -426,7 +536,8 @@ async function renderKnowledgeBaseList() {
     const reply = r.reply_content || r.reply || "";
     const type = r.trigger_type || "关键词回复";
     const used = r.trigger_count || 0;
-    const props = r.applicable_properties || "全部";
+    const propsRaw = (!r.applicable_properties || r.applicable_properties === "[]") ? "全部房源" : r.applicable_properties;
+    const props = propsRaw === "全部房源" ? "全部" : propsRaw;
     items.push({
       kind: "kb",
       enabled,
@@ -475,7 +586,7 @@ async function renderKnowledgeBaseList() {
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;color:#1e1b4b;font-weight:600;word-break:break-all">${escapeHtmlSync(it.cond)}</div>
           <div style="font-size:11px;color:#6b7280;line-height:1.4;margin-top:2px;word-break:break-all">→ ${escapeHtmlSync((it.reply || '').slice(0, 80))}</div>
-          <div style="font-size:10px;color:#9ca3af;margin-top:2px">📌 ${escapeHtmlSync(it.type)} · 适用：${escapeHtmlSync(it.props)} · 触发：${it.used} 次</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:2px">📌 ${escapeHtmlSync(it.type)} · 适用房源：${escapeHtmlSync(it.props)} · 触发：${it.used} 次</div>
         </div>
       </div>
     `;
@@ -652,7 +763,8 @@ async function testCloudConnection(endpoint, apiKey) {
  * @returns {Promise<{success: boolean, message: string}>}
  */
 async function handleSyncNow() {
-  console.log("[Popup-Sync] 执行立即同步");
+  const syncId = Date.now().toString(36);
+  SyncLogger.info("同步", `===== 开始同步 #${syncId} =====`);
 
   // 确保同步配置和认证状态已加载
   await loadSyncSettings();
@@ -660,6 +772,7 @@ async function handleSyncNow() {
 
   // 检查登录状态
   if (!syncAuthManager.isLoggedIn()) {
+    SyncLogger.warn("同步", "同步失败 - 未登录");
     const msgEl = document.getElementById("sync-msg");
     if (msgEl) {
       msgEl.textContent = "请先登录后再同步";
@@ -680,53 +793,200 @@ async function handleSyncNow() {
       msgEl.style.color = "#6b7280";
     }
 
-    // 导出数据
-    const exportResult = await syncService.exportData();
-    const jsonData = exportResult.json;
-    const localStats = exportResult.stats;
+    // ── 第一步：先拉取云端数据（避免 push 覆盖服务端规则） ──
+    SyncLogger.info("同步", "拉取服务端规则数据");
+    let cloudRawData = null;
 
-    // 上传到云端（带认证）
-    const uploadResult = await uploadToCloudWithAuth(jsonData, localStats);
-    if (!uploadResult.success) {
-      throw new Error(uploadResult.message);
+    // 直接独立下载，不先 push
+    SyncLogger.info("同步", "独立拉取云端数据");
+    const downloadResult = await downloadFromCloudWithAuth();
+    if (downloadResult.success && downloadResult.data) {
+      cloudRawData = downloadResult.data;
+      SyncLogger.info("同步", "独立拉取成功");
+    } else if (downloadResult.success && !downloadResult.data) {
+      SyncLogger.info("同步", "服务端无额外数据");
+    } else {
+      SyncLogger.warn("同步", "独立拉取失败", { message: downloadResult.message });
     }
 
-    // 更新同步时间
+    // ── 第二步：如果有云端数据，合并到本地 ──
+    let importedCount = 0;
+    if (cloudRawData) {
+      SyncLogger.info("同步", "开始合并云端数据到本地");
+      let normalizedData = cloudRawData;
+      if (typeof normalizedData === "object") {
+        normalizedData = JSON.stringify(normalizedData);
+      }
+
+      try {
+        const parsed = JSON.parse(normalizedData);
+        const topKeys = Object.keys(parsed);
+        SyncLogger.debug("同步", "云端数据结构", { topLevelKeys: topKeys });
+
+        if (parsed.keywordRules && Array.isArray(parsed.keywordRules) && parsed.keywordRules.length > 0) {
+          const local = await chrome.storage.local.get(["knowledgeBase"]);
+          const localKB = Array.isArray(local.knowledgeBase) ? local.knowledgeBase : [];
+          const { merged } = syncService.mergeKnowledgeBase(parsed, localKB);
+          await chrome.storage.local.set({ knowledgeBase: merged });
+          importedCount = merged.length - localKB.length;
+          SyncLogger.info("同步", `从服务端合并 ${parsed.keywordRules.length} 条规则，本地新增 ${importedCount} 条`);
+        }
+        // 方式 B/C/D：对其他格式兼容
+        else if (parsed.metadata && parsed.data) {
+          const importResult = await syncService.importData(normalizedData, { merge: true });
+          importedCount = importResult.imported || 0;
+          SyncLogger.info("同步", `标准格式导入完成`, importResult);
+        } else if (Array.isArray(parsed) && parsed.length > 0) {
+          const local = await chrome.storage.local.get(["knowledgeBase"]);
+          const localKB = Array.isArray(local.knowledgeBase) ? local.knowledgeBase : [];
+          const { merged } = syncService.mergeKnowledgeBase({ keywordRules: parsed }, localKB);
+          await chrome.storage.local.set({ knowledgeBase: merged });
+          importedCount = merged.length - localKB.length;
+          SyncLogger.info("同步", `数组格式合并完成`, { arrLen: parsed.length, newAdded: importedCount });
+        } else {
+          const wrapped = JSON.stringify({
+            metadata: { exportedAt: new Date().toISOString(), version: chrome.runtime.getManifest().version, source: "cloud_sync" },
+            data: parsed,
+          });
+          const importResult = await syncService.importData(wrapped, { merge: true });
+          importedCount = importResult.imported || 0;
+          SyncLogger.info("同步", `包装格式导入完成`, { imported: importedCount });
+        }
+      } catch (e) {
+        SyncLogger.error("同步", `数据合并异常: ${e.message}`);
+      }
+
+      if (importedCount > 0 && msgEl) {
+        msgEl.textContent = `✓ 同步完成，从云端拉取 ${importedCount} 条规则`;
+        msgEl.style.color = "#059669";
+      }
+    }
+
+    // ── 第三步：只推送脏数据（增量推送） ──
+    // 读取本地脏数据集合（包含新增/修改的规则 id + 已删除的规则 id）
+    const DIRTY_IDS_KEY_POPUP = "sync_dirty_ids";
+    const dirtyRes = await chrome.storage.local.get(DIRTY_IDS_KEY_POPUP);
+    const dirty = dirtyRes[DIRTY_IDS_KEY_POPUP] || {};
+    const dirtyIds = Array.isArray(dirty.knowledgeBase) ? dirty.knowledgeBase : [];
+    const deletedIds = Array.isArray(dirty.knowledgeBase_deleted) ? dirty.knowledgeBase_deleted : [];
+
+    // 拉取本地知识库
+    const localKB = await chrome.storage.local.get(["knowledgeBase"]);
+    const kbArr = Array.isArray(localKB.knowledgeBase) ? localKB.knowledgeBase : [];
+
+    // 只取脏 id 对应的规则（不传整库）
+    const dirtyRules = kbArr.filter((r) => r && r.id && dirtyIds.includes(r.id));
+
+    // 构造服务端期望的扁平 payload：{ keywordRules, deletedRuleIds }
+    // 关键修复：服务端 /sync/push 接口只识别顶层 keywordRules 字段
+    const serverPayload = {
+      keywordRules: dirtyRules.map((r) =>
+        typeof syncService.localToServer === "function"
+          ? syncService.localToServer(r)
+          : r
+      ),
+      deletedRuleIds: deletedIds,
+    };
+
+    SyncLogger.info("上传", "构造增量推送 payload", {
+      dirtyCount: dirtyRules.length,
+      deletedCount: deletedIds.length,
+      totalLocal: kbArr.length,
+    });
+
+    const mergedExport = await syncService.exportData();
+    const currentKBCount = mergedExport.stats.knowledgeBase || 0;
+    const meta = await syncService.getSyncMetadata();
+    const lastKBCount = meta.lastUploadedKBCount ?? 0;
+    const DELETION_LOG_KEY_POPUP = "sync_deletion_log";
+    let shouldUpload = true;
+
+    // 上传保护：本地规则数骤降 > 50% 且无删除记录 → 跳过
+    if (lastKBCount > 0 && currentKBCount < lastKBCount * 0.5) {
+      const delResult = await chrome.storage.local.get(DELETION_LOG_KEY_POPUP);
+      const deletionLog = Array.isArray(delResult[DELETION_LOG_KEY_POPUP]) ? delResult[DELETION_LOG_KEY_POPUP] : [];
+      const recentDeletions = deletionLog.filter(d =>
+        d.type === "knowledgeBase" &&
+        d.deletedAt && (Date.now() - new Date(d.deletedAt).getTime()) < 2 * 60 * 1000
+      );
+      if (recentDeletions.length === 0) {
+        shouldUpload = false;
+        SyncLogger.warn("同步", `⛔ 保护：本地知识库从 ${lastKBCount} 条骤降至 ${currentKBCount} 条，无删除记录，跳过上传`);
+      } else {
+        const expectedDrop = lastKBCount - currentKBCount;
+        if (recentDeletions.length < expectedDrop * 0.8) {
+          shouldUpload = false;
+          SyncLogger.warn("同步", `⛔ 保护：本地减少 ${expectedDrop} 条，删除记录仅 ${recentDeletions.length} 条，跳过上传`);
+        }
+      }
+    }
+
+    // 关键：只有当有脏数据时才推送（增量），否则跳过 push 避免无谓请求
+    const hasDirtyData = dirtyRules.length > 0 || deletedIds.length > 0;
+    if (shouldUpload && (hasDirtyData || importedCount > 0)) {
+      SyncLogger.info("同步", `将 ${dirtyRules.length} 条脏数据 + ${deletedIds.length} 条删除推送到云端`);
+      const upResult = await uploadToCloudWithAuth(serverPayload, mergedExport.stats);
+      if (upResult.success) {
+        // 推送成功：清除脏标记 + 写入推送日志
+        await syncService.updateSyncMetadata({ lastUploadedKBCount: currentKBCount });
+
+        // 写入推送详情日志（按用户要求：推送数据详情日志）
+        const pushDetails = dirtyRules.map((r) => ({
+          id: r.id,
+          keyword: r.trigger_condition,
+          reply: r.reply_content,
+          status: r.status,
+        }));
+        SyncLogger.info("推送详情", `本次推送 ${dirtyRules.length} 条新增/修改 + ${deletedIds.length} 条删除`, {
+          pushed: pushDetails,
+          deleted: deletedIds,
+          timestamp: new Date().toISOString(),
+        });
+
+        // 清除脏标记
+        await chrome.storage.local.set({
+          [DIRTY_IDS_KEY_POPUP]: {
+            knowledgeBase: [],
+            knowledgeBase_deleted: [],
+          },
+        });
+        SyncLogger.info("同步", "已清除脏数据标记");
+      }
+    } else if (!shouldUpload) {
+      SyncLogger.info("同步", "上传保护已触发，仅从云端拉取数据");
+    } else {
+      SyncLogger.info("同步", "本地无脏数据，跳过推送（仅拉取）");
+    }
+
+    // 更新同步时间和 lastPullTime（增量拉取）
+    const nowISO = new Date().toISOString();
     await syncService.updateSyncMetadata({
-      lastSyncTime: new Date().toISOString(),
+      lastSyncTime: nowISO,
+      lastPullTime: nowISO,
       lastSyncStatus: "cloud_sync",
     });
 
     // 刷新状态
     await checkSyncStatus();
 
-    // 显示详细统计（只显示有变更的类型）
-    if (uploadResult.stats) {
-      detailContentEl.innerHTML = formatSyncDetail(uploadResult.stats);
-      detailEl.style.display = "block";
-    }
-
-    if (msgEl) {
+    if (msgEl && !msgEl.textContent.includes("同步完成")) {
       msgEl.textContent = "✓ 同步完成";
       msgEl.style.color = "#059669";
-      setTimeout(() => {
-        msgEl.textContent = "";
-      }, 3000);
+      setTimeout(() => { msgEl.textContent = ""; }, 3000);
     }
 
-    console.log("[Popup-Sync] 同步完成");
-    return { success: true, message: "同步成功", stats: uploadResult.stats };
-  } catch (err) {
-    console.error("[Popup-Sync] 同步失败:", err);
+    const finalStats = await syncService.getStorageStats();
+    SyncLogger.info("同步", `===== 同步 #${syncId} 完成 =====`, { finalStats: finalStats });
 
+    return { success: true, message: "同步成功" };
+  } catch (err) {
+    SyncLogger.error("同步", `同步异常: ${err.message}`);
     if (msgEl) {
       msgEl.textContent = `同步失败: ${err.message}`;
       msgEl.style.color = "#dc2626";
     }
-
     showSyncError();
     if (detailEl) detailEl.style.display = "none";
-
     return { success: false, message: err.message };
   }
 }
@@ -783,6 +1043,8 @@ function escapeHtml(str) {
 
 /**
  * 带认证上传到云端
+ * @param {string|Object} jsonData - JSON 字符串或已解析对象；推荐传对象（避免双重 JSON 编码）
+ * @param {Object} localStats
  */
 async function uploadToCloudWithAuth(jsonData, localStats) {
   const endpoint = getCloudEndpoint();
@@ -792,12 +1054,20 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
 
   const token = syncAuthManager.getAccessToken();
   if (!token) {
-    console.error("[Sync] token 不存在");
+    SyncLogger.error("上传", "token 不存在");
     return { success: false, message: "未登录或未配置云端" };
   }
 
   try {
     const url = `${endpoint}${APP_CONFIG.SYNC.PUSH}`;
+    SyncLogger.info("上传", `推送数据到 ${url}`, {
+      dataSize: typeof jsonData === "string" ? jsonData.length : JSON.stringify(jsonData).length,
+    });
+
+    // 关键：data 字段必须是已解析的对象（不是 JSON 字符串），
+    // 否则服务端再 JSON.parse 后会得到字符串而非对象，找不到 keywordRules
+    const dataPayload = typeof jsonData === "string" ? safeJsonParse(jsonData, {}) : jsonData;
+
     const resp = await fetch(url, {
       method: "POST",
       headers: {
@@ -805,7 +1075,7 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
         Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
-        data: jsonData,
+        data: dataPayload,
         timestamp: new Date().toISOString(),
         deviceId: await getDeviceId(),
         localStats: localStats
@@ -814,17 +1084,155 @@ async function uploadToCloudWithAuth(jsonData, localStats) {
 
     if (resp.ok) {
       const result = await resp.json();
-      return { success: true, message: "上传成功", stats: result.stats || {} };
+      SyncLogger.info("上传", "推送成功", { 
+        status: resp.status,
+        hasServerData: !!result.data,
+        serverDataKeys: result.data ? Object.keys(result.data) : [],
+        stats: result.stats
+      });
+      return { success: true, message: "上传成功", stats: result.stats || {}, serverData: result.data || null };
     } else {
       const err = await resp.json().catch(() => ({}));
+      SyncLogger.warn("上传", `推送失败 HTTP ${resp.status}`, { message: err.message });
       if (resp.status === 401) {
         await syncAuthManager.clearAuthState();
+        SyncLogger.warn("上传", "登录过期，已清除认证状态");
         return { success: false, message: "登录已过期，请重新登录" };
       }
       return { success: false, message: err.message || `上传失败: ${resp.status}` };
     }
   } catch (err) {
+    SyncLogger.error("上传", `网络异常: ${err.message}`, { endpoint });
     return { success: false, message: `网络错误: ${err.message}` };
+  }
+}
+
+/**
+ * 从云端拉取数据（使用认证 token）
+ * @returns {Promise<{success: boolean, data: string|null, message: string}>}
+ */
+async function downloadFromCloudWithAuth() {
+  const endpoint = getCloudEndpoint();
+
+  // ★ 获取上次拉取时间，用于增量请求
+  const meta = await syncService.getSyncMetadata();
+  const lastPullTime = meta.lastPullTime || "";
+
+  await syncAuthManager.refreshTokenIfNeeded();
+  const token = syncAuthManager.getAccessToken();
+  if (!token) {
+    SyncLogger.error("下载", "token 不存在");
+    return { success: false, data: null, message: "未登录" };
+  }
+
+  try {
+    // 端点优先级：/sync/pull → /sync/download → push 空数据回显
+    let usedMethod = "GET /sync/pull";
+    let url = `${endpoint}/sync/pull`;
+    const pullUrl = lastPullTime ? `${url}?lastPullTime=${encodeURIComponent(lastPullTime)}` : url;
+    SyncLogger.info("下载", `尝试方法1: GET ${pullUrl}${lastPullTime ? ' (增量)' : ' (全量)'}`);
+    let resp = await fetch(pullUrl, {
+      method: "GET",
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        "Cache-Control": "no-cache, no-store",
+        "Pragma": "no-cache",
+        ...(lastPullTime ? { "X-Last-Pull-Time": lastPullTime } : {}),
+      },
+    });
+
+    // 如果 pull 不存在，尝试 /sync/download（非认证版使用的端点）
+    if (resp.status === 404) {
+      usedMethod = "GET /sync/download";
+      url = `${endpoint}/sync/download`;
+      const downloadUrl = lastPullTime ? `${url}?lastPullTime=${encodeURIComponent(lastPullTime)}` : url;
+      SyncLogger.info("下载", `方法1 404，尝试方法2: GET ${downloadUrl}${lastPullTime ? ' (增量)' : ''}`);
+      resp = await fetch(downloadUrl, {
+        method: "GET",
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          "Cache-Control": "no-cache, no-store",
+          ...(lastPullTime ? { "X-Last-Pull-Time": lastPullTime } : {}),
+        },
+      });
+    }
+
+    // 如果 download 也不存在，尝试 push 空数据让服务端回显（兼容旧版）
+    if (resp.status === 404) {
+      usedMethod = "POST /sync/push (pullOnly)";
+      SyncLogger.info("下载", "方法2 404，改用 push 空数据拉取");
+      url = `${endpoint}${APP_CONFIG.SYNC.PUSH}`;
+      const pushBody = {
+        data: JSON.stringify({ metadata: { pullOnly: true, lastPullTime: lastPullTime || undefined }, data: {} }),
+        timestamp: new Date().toISOString(),
+        deviceId: await getDeviceId(),
+        pullOnly: true,
+      };
+      if (lastPullTime) pushBody.lastPullTime = lastPullTime;
+      resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(pushBody),
+      });
+    }
+
+    SyncLogger.info("下载", `[${usedMethod}] HTTP ${resp.status} ${resp.ok ? 'OK' : 'FAIL'}`);
+
+    if (resp.ok) {
+      const result = await resp.json();
+      SyncLogger.info("下载", `[${usedMethod}] 响应解析成功`, { 
+        resultKeys: Object.keys(result),
+        code: result.code,
+        hasData: !!result.data
+      });
+
+      let serverData = result.data || result.serverData || result;
+      SyncLogger.info("下载", `[${usedMethod}] serverData`, {
+        type: typeof serverData,
+        isArray: Array.isArray(serverData),
+        keysOrLen: serverData ? (Array.isArray(serverData) ? serverData.length : Object.keys(serverData)) : 'null'
+      });
+
+      // 过滤掉非数据字段
+      if (serverData && typeof serverData === "object" && !Array.isArray(serverData)) {
+        const metaKeys = ["code", "message", "success", "timestamp", "requestId"];
+        const hasOnlyMeta = Object.keys(serverData).every(k => metaKeys.includes(k));
+        if (hasOnlyMeta) {
+          SyncLogger.info("下载", `[${usedMethod}] 服务端返回仅有元信息字段`, { keys: Object.keys(serverData) });
+          serverData = null;
+        }
+      }
+
+      if (serverData) {
+        if (serverData.keywordRules) {
+          SyncLogger.info("下载", `[${usedMethod}] keywordRules 详情`, { 
+            type: typeof serverData.keywordRules,
+            isArray: Array.isArray(serverData.keywordRules),
+            length: Array.isArray(serverData.keywordRules) ? serverData.keywordRules.length : 'N/A'
+          });
+        }
+        const dataKeys = Array.isArray(serverData) ? `[array(${serverData.length})]` : Object.keys(serverData).join(",");
+        SyncLogger.info("下载", `[${usedMethod}] 获取到云端数据`, { keys: dataKeys });
+        const dataStr = typeof serverData === "string" ? serverData : JSON.stringify(serverData);
+        return { success: true, data: dataStr, message: "下载成功" };
+      }
+      SyncLogger.info("下载", `[${usedMethod}] 服务端暂无数据`);
+      return { success: true, data: null, message: "服务端暂无数据" };
+    } else {
+      SyncLogger.warn("下载", `[${usedMethod}] 拉取失败 HTTP ${resp.status}`);
+      if (resp.status === 401) {
+        await syncAuthManager.clearAuthState();
+        return { success: false, data: null, message: "登录已过期，请重新登录" };
+      }
+      const err = await resp.json().catch(() => ({}));
+      return { success: false, data: null, message: err.message || `下载失败: ${resp.status}` };
+    }
+  } catch (err) {
+    SyncLogger.error("下载", `网络异常: ${err.message}`, { endpoint });
+    return { success: false, data: null, message: `网络错误: ${err.message}` };
   }
 }
 
@@ -1079,6 +1487,39 @@ async function saveSyncSettings(config) {
   });
 
   console.log("[Popup-Sync] 同步设置已保存");
+}
+
+// ── 查看同步日志 ─────────────────────────────
+async function showSyncLogs() {
+  const modal = document.getElementById("sync-log-modal");
+  const listEl = document.getElementById("sync-log-list");
+  const countEl = document.getElementById("sync-log-count");
+  if (!modal || !listEl) return;
+
+  modal.classList.add("open");
+
+  try {
+    const logs = await SyncLogger.getLogs(null, 500);
+    if (countEl) countEl.textContent = logs.length;
+
+    if (logs.length === 0) {
+      listEl.innerHTML = '<div class="empty-tip" style="color:#9ca3af;text-align:center;padding:20px 0">暂无同步日志</div>';
+      return;
+    }
+
+    listEl.innerHTML = logs.reverse().map(e => {
+      const time = new Date(e.timestamp).toLocaleString("zh-CN", { hour12: false });
+      const levelColor = e.level === "ERROR" ? "#dc2626" : e.level === "WARN" ? "#d97706" : "#4f46e5";
+      return `<div style="padding:3px 4px;border-bottom:1px solid #f3f4f6;display:flex;gap:6px">
+        <span style="color:#9ca3af;white-space:nowrap;flex-shrink:0">${time}</span>
+        <span style="color:${levelColor};font-weight:600;flex-shrink:0;width:40px">${e.level}</span>
+        <span style="color:#4b5563;flex-shrink:0">[${e.step}]</span>
+        <span style="color:#1f2937;word-break:break-all">${escapeHtml(e.message)}${e.details ? ' ' + escapeHtml(JSON.stringify(e.details)) : ''}</span>
+      </div>`;
+    }).join("");
+  } catch (e) {
+    listEl.innerHTML = `<div style="color:#dc2626;text-align:center;padding:20px 0">加载日志失败: ${escapeHtml(e.message)}</div>`;
+  }
 }
 
 // ── 导出模块 ────────────────────────────────
