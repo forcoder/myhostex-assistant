@@ -17,13 +17,14 @@ const APP_CONFIG = {
   /** 主端点（popup 同步界面默认值）：nginx 反代，承载 /auth/login、/sync/push */
   CLOUD_ENDPOINT: "http://api.agentai0.com",
   /** 备用端点（同步上传失败时的回退，指向直连后端） */
-  CLOUD_ENDPOINT_FALLBACK: "http://sync.agentai0.com",
+  CLOUD_ENDPOINT_FALLBACK: "http://api.agentai0.com",
 
   // ── 认证 API 路径 ─────────────────────────────
+  // 与 APK 一致 (csBaby/app/.../AuthApiService.kt): /api/auth/user/{login,register,refresh}
   AUTH: {
-    LOGIN:    "/auth/login",
-    REGISTER: "/auth/register",
-    REFRESH:  "/auth/refresh",
+    LOGIN:    "/api/auth/user/login",
+    REGISTER: "/api/auth/user/register",
+    REFRESH:  "/api/auth/user/refresh",
   },
 
   // ── 同步 API 路径 ─────────────────────────────
@@ -60,9 +61,8 @@ const APP_CONFIG = {
     "*://*/*",
     "https://*.supabase.com/*",
     "http://api.agentai0.com/*",
-    "http://sync.agentai0.com/*",
   ],
 
   // ── CSP connect-src（供参考） ─────────────────
-  CSP_CONNECT_SRC: "http://sync.agentai0.com http://api.agentai0.com http://localhost:* https://api.longcat.chat",
+  CSP_CONNECT_SRC: "http://api.agentai0.com http://localhost:* https://api.longcat.chat",
 };
